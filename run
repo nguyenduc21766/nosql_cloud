@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+docker run --privileged \
+  -v "$(pwd)/mount":/home/root/mount \
+  -p 80:80  -p 27017:27017  -p 6379:6379 \
+  -d -h dbCourseUbuntu --name nosql-docker nosql-docker
+
+echo
+echo "Container started.  FastAPI = http://localhost:80/"
+echo "MongoDB  = localhost:27017    Redis = localhost:6379"
+echo "Run 'docker exec -it nosql-docker /bin/bash' to inspect."

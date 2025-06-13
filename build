@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e   # exit on first failure
+
+echo
+echo "Building CodeRunner NoSQL API container (will wipe old image/container)…"
+read -rp "Proceed? [y/N] " yn
+[[ $yn =~ ^[Yy]$ ]] || { echo "Cancelled."; exit 0; }
+
+# Stop & delete any existing container (ignore if absent)
+docker stop nosql-docker       2>/dev/null || true
+docker rm   -f nosql-docker    2>/dev/null || true
+
+# Remove old image (ignore if absent)
+docker image rm -f nosql-docker 2>/dev/null || true
+
+# Build fresh image
+docker build -t nosql-docker --no-cache --progress=plain .

@@ -332,7 +332,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
                 raise ValueError(f"Invalid JSON document: {e}")
             
             result = collection.insert_one(document)
-            return f"Inserted document with _id: {result.inserted_id}"
+            return f"Inserted document"
         
         elif operation_name == "insertMany":
             if not params_str.strip():
@@ -357,7 +357,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
             else:
                 query = {}
             
-            results = list(collection.find(query))
+            results = list(collection.find(query, {"_id": 0}))
             # Convert ObjectId to string for JSON serialization
             for doc in results:
                 if '_id' in doc:
@@ -374,7 +374,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
             else:
                 query = {}
             
-            result = collection.find_one(query)
+            result = collection.find_one(query, {"_id": 0})  
             if result:
                 if '_id' in result:
                     result['_id'] = str(result['_id'])

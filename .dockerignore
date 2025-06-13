@@ -1,0 +1,31 @@
+# --- Python artefacts ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# --- Venvs ---
+.venv/
+env/
+
+# --- Git / CI metadata ---
+.git/
+.gitignore
+.gitattributes
+.github/
+.gitlab/
+
+# --- Editor/IDE junk ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Local datasets & temp mounts ---
+mount/               # the host-mounted folder; no need to bake it into the image
+*.log
+*.tmp
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
