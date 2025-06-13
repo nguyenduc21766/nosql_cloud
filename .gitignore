@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.env
+venv/
+fastapi.log
+main_0.py
+main_mongo_0
+template
