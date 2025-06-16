@@ -1,0 +1,42 @@
+Step to use api server with Docker container connected
+## 2. Using the Server Once Connected
+2.1. Navigate to the project directory:
+    ```bash
+    cd ~/nosql_cloud
+    ```
+
+## 3. Build the Docker Image
+3.1. Run the provided `build` script (this wipes and rebuilds the image):
+    ```bash
+    ./build
+    ```
+
+## 4. Run the Docker Container
+4.1. Execute the `run` script:
+    ```bash
+    ./run
+    ```
+4.2. This starts the container and binds:
+    - FastAPI at: `http://localhost:80/`
+    - MongoDB at: `localhost:27017`
+    - Redis at: `localhost:6379`
+
+## 5. Enter the Container (Optional)
+5.1. To inspect inside the container:
+    ```bash
+    docker exec -it nosql-docker /bin/bash
+    ```
+
+## 6. Test FastAPI Endpoint
+6.1. Example MongoDB POST request:
+    ```bash
+    curl -X POST http://localhost:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
+    ```
+6.2. Example Redis POST request:
+    ```bash
+    curl -X POST http://localhost:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
+    ```
+
+## Notes
+- If you get port conflict errors, ensure no host Redis/Mongo is running: `sudo systemctl stop redis-server mongod`
+- Make sure port 80, 6379, and 27017 are open in Azure NSG/firewall settings.
