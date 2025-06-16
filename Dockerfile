@@ -1,76 +1,62 @@
 ###############################################################################
 # Image : databasecourse-nosql-api
-# Base  : Ubuntu 24.04 (noble) – pinned DB & Python package versions
+# Base  : Ubuntu 24.04 
 ###############################################################################
 FROM ubuntu:24.04
 ARG TZ=Europe/Helsinki
 
-# ── 0.  House-keeping ────────────────────────────────────────────────────────
-RUN ln -snf /usr/share/zoneinfo/${TZ} /etc/localtime \
- && echo "${TZ}" > /etc/timezone
+# ── 0. Setup ────────────────────────────────────────────────────────────────
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo "$TZ" > /etc/timezone
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
-    MONGO_MAJOR=6.0 \
-    MONGO_VER=6.0.14
+    PIP_BREAK_SYSTEM_PACKAGES=1
 
 RUN apt-get update && apt-get upgrade -y
 
-# convenience macro  
+# Convenience macro
 ENV apt='apt-get --no-install-recommends install -yq'
 
-RUN $apt sudo systemctl nano curl gnupg2 acl unzip git wget less vim lsb-release gpg
+# Base utilities + systemd support
+RUN $apt sudo nano curl gnupg2 acl unzip git wget less vim lsb-release gpg \
+    systemd systemd-sysv build-essential tcl pkg-config python3 python3-pip python3-setuptools
 
-# Create a non-root workspace (optional – you can stay as root like teacher)
-RUN mkdir -p /home/root
-WORKDIR /home/root
+# ── 1. Python deps ──────────────────────────────────────────────────────────
+RUN pip3 install --no-cache-dir fastapi uvicorn redis pymongo
 
-# ── 1.  Python +  FastAPI app  ──────────────────────────────────────────────
-RUN $apt python3 python3-pip python3-setuptools
-ENV PIP_BREAK_SYSTEM_PACKAGES=1       
+# ── 2. Redis 7.0.15 from source ─────────────────────────────────────────────
+ARG REDIS_VERSION=7.0.15
+RUN curl -fsSL https://download.redis.io/releases/redis-${REDIS_VERSION}.tar.gz | tar xz -C /tmp && \
+    make -C /tmp/redis-${REDIS_VERSION} && \
+    make -C /tmp/redis-${REDIS_VERSION} install && \
+    mkdir -p /etc/redis && \
+    cp /tmp/redis-${REDIS_VERSION}/redis.conf /etc/redis/redis.conf && \
+    sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf && \
+    sed -i 's/^bind .*/# &/' /etc/redis/redis.conf && \
+    printf "[Unit]\nDescription=Redis In-Memory Data Store\nAfter=network.target\n\n[Service]\nExecStart=/usr/local/bin/redis-server /etc/redis/redis.conf\nRestart=always\nUser=root\n\n[Install]\nWantedBy=multi-user.target\n" \
+      > /etc/systemd/system/redis.service && \
+    systemctl enable redis.service
 
-RUN pip3 install --no-cache-dir \
-        fastapi uvicorn redis pymongo
+# ── 3. MongoDB 7.0.5 binary ─────────────────────────────────────────────────
+ARG MONGO_VERSION=7.0.5
+ARG MONGO_PKG=mongodb-linux-x86_64-ubuntu2204-${MONGO_VERSION}
+RUN curl -fsSL https://fastdl.mongodb.org/linux/${MONGO_PKG}.tgz -o /tmp/mongo.tgz && \
+    tar -xzf /tmp/mongo.tgz -C /opt && \
+    ln -s /opt/${MONGO_PKG}/bin/* /usr/local/bin && \
+    mkdir -p /data/db && \
+    printf "storage:\n  dbPath: /data/db\nnet:\n  bindIp: 0.0.0.0\n" > /etc/mongod.conf && \
+    printf "[Unit]\nDescription=MongoDB Database Server\nAfter=network.target\n\n[Service]\nExecStart=/usr/local/bin/mongod --config /etc/mongod.conf\nRestart=always\nUser=root\n\n[Install]\nWantedBy=multi-user.target\n" \
+      > /etc/systemd/system/mongod.service && \
+    systemctl enable mongod.service
 
-# ── 2.  Redis 7.0.x  (official apt repo) ────────────────────────────────────
-# ── 2. Redis 7.x from packages.redis.io (jammy repo) ──────────────────────
-# ── 2. Redis 7.x from packages.redis.io (fixed repo) ──────────────────────
-RUN curl -fsSL https://packages.redis.io/gpg | \
-    gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] \
-         https://packages.redis.io/deb noble main" \
-         > /etc/apt/sources.list.d/redis.list && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends redis-server
-# un-lock Redis so the API container can talk to it from outside (same tweaks your teacher made)
-RUN sed -i 's/^protected-mode yes/protected-mode no/' /etc/redis/redis.conf \
- && sed -i 's/^bind .*/# &/' /etc/redis/redis.conf \
- && sed -i 's/^daemonize no/daemonize no/' /etc/redis/redis.conf
-
-# ── 3.  MongoDB 6.0  (official repo, pinned) ───────────────────────────────
-RUN curl -fsSL https://pgp.mongodb.com/server-${MONGO_MAJOR}.asc | gpg --dearmor -o /usr/share/keyrings/mongodb-archive-keyring.gpg \
- && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/mongodb-archive-keyring.gpg] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/${MONGO_MAJOR} multiverse" \
-       > /etc/apt/sources.list.d/mongodb-org-${MONGO_MAJOR}.list \
- && apt-get update \
- && apt-get install -y --no-install-recommends \
-        mongodb-org=${MONGO_VER} \
-        mongodb-org-server=${MONGO_VER} \
-        mongodb-org-shell=${MONGO_VER} \
-        mongodb-org-mongos=${MONGO_VER} \
-        mongodb-org-tools=${MONGO_VER}
-
-RUN sed -i 's/^  bindIp:.*$/  bindIp: 0.0.0.0/' /etc/mongod.conf
-
-# ── 4.  Your FastAPI service file  ──────────────────────────────────────────
+# ── 4. FastAPI service file + app ───────────────────────────────────────────
 COPY docker/fastapi.service /etc/systemd/system/fastapi.service
 COPY . /app
+RUN systemctl enable fastapi.service
 
-RUN systemctl enable redis-server.service \
- && systemctl enable mongod.service \
- && systemctl enable fastapi.service
-
-# ── 5.  Enable systemd inside the container (same hack as teacher) ─────────
+# ── 5. Systemd inside container ─────────────────────────────────────────────
 RUN mkdir -p /run/systemd && echo 'docker' > /run/systemd/container
+
 EXPOSE 80
 CMD ["/sbin/init"]
