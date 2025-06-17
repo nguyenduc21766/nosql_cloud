@@ -7,6 +7,7 @@ import json
 from typing import Optional, List, Any, Dict, Union
 from bson import ObjectId
 import logging
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -209,10 +210,13 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("EXPIRE requires key and seconds arguments")
         try:
             seconds = int(args[1])
+            if seconds <= 0:
+                raise ValueError("EXPIRE seconds must be a positive integer")
         except ValueError:
-            raise ValueError("EXPIRE seconds argument must be an integer")
+            raise ValueError("EXPIRE seconds argument must be a positive integer")
         result = redis_client.expire(args[0], seconds)
-        return f"Set expiry on key '{args[0]}': {'Success' if result else 'Failed'}"
+        return f"Set expiry on key '{args[0]}' to {seconds} seconds: {'Success' if result else 'Failed'}"
+    
     
     # KEYS command
     elif command == "KEYS":
@@ -290,6 +294,42 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("SMEMBERS requires exactly one key argument")
         members = redis_client.smembers(args[0])
         return f"Members of set '{args[0]}': {list(members)}"
+    
+    # WAIT command
+    elif command == "WAIT":
+        if len(args) != 2:
+            raise ValueError("WAIT requires numreplicas and timeout arguments")
+        try:
+            numreplicas = int(args[0])
+            timeout = int(args[1])
+        except ValueError:
+            raise ValueError("WAIT numreplicas and timeout must be integers")
+        num_replicas_acked = redis_client.wait(numreplicas, timeout)
+        return f"WAIT: {num_replicas_acked} replicas acknowledged within {timeout}ms"
+    
+    # TTL command
+    elif command == "TTL":
+        if len(args) != 1:
+            raise ValueError("TTL requires exactly one key argument")
+        ttl = redis_client.ttl(args[0])
+        if ttl == -2:
+            return f"Key '{args[0]}' does not exist"
+        elif ttl == -1:
+            return f"Key '{args[0]}' has no expiration"
+        return f"Time to live for key '{args[0]}': {ttl} seconds"
+    
+    # PAUSE command
+    elif command == "PAUSE":
+        if len(args) != 1:
+            raise ValueError("Invalid PAUSE syntax. Use: PAUSE <seconds>")
+        try:
+            delay = int(args[0])
+            if delay < 0:
+                raise ValueError("PAUSE seconds must be non-negative")
+            time.sleep(delay)
+            return f"Paused for {delay} seconds"
+        except ValueError:
+            raise ValueError("Invalid number of seconds")
     
     else:
         raise ValueError(f"Unsupported Redis command: '{command}'")
