@@ -196,6 +196,17 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("INCR requires exactly one key argument")
         value = redis_client.incr(args[0])
         return f"Incremented key '{args[0]}' to {value}"
+
+    # INCRBY command
+    elif command == "INCRBY":
+        if len(args) != 2:
+            raise ValueError("INCRBY requires key and increment arguments")
+        try:
+            increment = int(args[1])
+        except ValueError:
+            raise ValueError("INCRBY increment argument must be an integer")
+        value = redis_client.incrby(args[0], increment)
+        return f"Incremented key '{args[0]}' by {increment} to {value}"
     
     # DECR command
     elif command == "DECR":
@@ -203,6 +214,17 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("DECR requires exactly one key argument")
         value = redis_client.decr(args[0])
         return f"Decremented key '{args[0]}' to {value}"
+
+    # DECRBY command
+    elif command == "DECRBY":
+        if len(args) != 2:
+            raise ValueError("DECRBY requires key and decrement arguments")
+        try:
+            decrement = int(args[1])
+        except ValueError:
+            raise ValueError("DECRBY decrement argument must be an integer")
+        value = redis_client.decrby(args[0], decrement)
+        return f"Decremented key '{args[0]}' by {decrement} to {value}"
     
     # EXPIRE command
     elif command == "EXPIRE":
