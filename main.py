@@ -158,13 +158,26 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
     
     # SET command
-    if command == "SET":
+    elif command == "SET":
         if len(args) < 2:
             raise ValueError("SET requires at least key and value arguments")
         key = args[0]
-        value = " ".join(args[1:])
-        redis_client.set(key, value)
-        return f"Set key '{key}' with value '{value}'"
+        # Check if EX option is provided
+        if len(args) >= 4 and args[-2].upper() == "EX":
+            try:
+                seconds = int(args[-1])
+                if seconds <= 0:
+                    raise ValueError("EX seconds must be a positive integer")
+                value = " ".join(args[1:-2])  # Value is everything between key and EX
+                redis_client.set(key, value, ex=seconds)
+                return f"Set key '{key}' with value '{value}' and expiration {seconds} seconds"
+            except ValueError:
+                raise ValueError("EX seconds argument must be a positive integer")
+        else:
+            # Standard SET without EX
+            value = " ".join(args[1:])
+            redis_client.set(key, value)
+            return f"Set key '{key}' with value '{value}'"
     
     # GET command
     elif command == "GET":
