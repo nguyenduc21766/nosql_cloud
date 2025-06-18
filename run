@@ -7,6 +7,7 @@ if docker ps -a --format '{{.Names}}' | grep -q '^nosql-docker$'; then
 else
   echo "Creating new container 'nosql-docker'…"
   docker run --privileged \
+    -v "$(pwd)/app":/app \
     -v "$(pwd)/mount":/home/root/mount \
     -p 80:80 -p 27017:27017 -p 6379:6379 \
     -d -h dbCourseUbuntu --name nosql-docker nosql-docker
