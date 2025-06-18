@@ -385,6 +385,13 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             return f"No encoding found for key '{args[1]}'"
         return f"Encoding for key '{args[1]}': {encoding}"
 
+    # TYPE command
+    elif command == "TYPE":
+        if len(args) != 1:
+            raise ValueError("TYPE requires exactly one key argument")
+        key_type = redis_client.type(args[0])
+        return f"Type of key '{args[0]}': {key_type}"
+
     else:
         raise ValueError(f"Unsupported Redis command: '{command}'")
 
