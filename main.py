@@ -352,7 +352,26 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             return f"Paused for {delay} seconds"
         except ValueError:
             raise ValueError("Invalid number of seconds")
+
+    # RENAME command
+    elif command == "RENAME":
+        if len(args) != 2:
+            raise ValueError("RENAME requires old key and new key arguments")
+        try:
+            redis_client.rename(args[0], args[1])
+            return f"Renamed key '{args[0]}' to '{args[1]}'"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to rename key '{args[0]}' to '{args[1]}': {str(e)}")
     
+    # OBJECT command
+    elif command == "OBJECT":
+        if len(args) < 2 or args[0].upper() != "ENCODING":
+            raise ValueError("OBJECT ENCODING requires key argument")
+        encoding = redis_client.object("encoding", args[1])
+        if encoding is None:
+            return f"No encoding found for key '{args[1]}'"
+        return f"Encoding for key '{args[1]}': {encoding}"
+
     else:
         raise ValueError(f"Unsupported Redis command: '{command}'")
 

@@ -30,11 +30,11 @@ Step to use api server with Docker container connected
 ## 6. Test FastAPI Endpoint
 6.1. Example MongoDB POST request:
     ```bash
-    curl -X POST http://localhost:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
+    curl -X POST http://68.219.210.74:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
     ```
 6.2. Example Redis POST request:
     ```bash
-    curl -X POST http://localhost:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
+    curl -X POST http://68.219.210.74:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
     ```
 
 ## Notes
