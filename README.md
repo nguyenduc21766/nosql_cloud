@@ -1,4 +1,4 @@
-Here is a clean and tailored `README.md` file for your project:
+
 
 ---
 
@@ -131,7 +131,3 @@ Once inside the container, you can check `/app/help.txt` for a concise guide on 
 
 * The container uses `systemd` to manage services.
 * Source files for the FastAPI app are stored in `/app`.
-
----
-
-Let me know if you want this saved as a file or published somewhere.
