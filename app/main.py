@@ -158,7 +158,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
     
     # SET command
-    elif command == "SET":
+    if command == "SET":
         if len(args) < 2:
             raise ValueError("SET requires at least key and value arguments")
         key = args[0]
@@ -264,7 +264,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "FLUSHALL":
         redis_client.flushall()
         return "All keys have been flushed"
-    
+    #--------------------------------HASH COMMANDS--------------------------------
     # HSET command (Hash)
     elif command == "HSET":
         if len(args) < 3:
@@ -283,7 +283,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if value is None:
             return f"Field '{args[1]}' in key '{args[0]}' not found"
         return f"Value for field '{args[1]}' in key '{args[0]}': '{value}'"
-    
+    #--------------------------------LIST COMMANDS--------------------------------
     # LPUSH command (List)
     elif command == "LPUSH":
         if len(args) < 2:
@@ -313,7 +313,42 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("LRANGE start and stop must be integers")
         values = redis_client.lrange(args[0], start, stop)
         return f"Values in list '{args[0]}' from {start} to {stop}: {values}"
+
+    # LLEN command (List)
+    elif command == "LLEN":
+        if len(args) != 1:
+            raise ValueError("LLEN requires exactly one key argument")
+        length = redis_client.llen(args[0])
+        return f"Length of list at key '{args[0]}': {length}"
+
+    # LINSERT command (List)
+    elif command == "LINSERT":
+        if len(args) != 4:
+            raise ValueError("LINSERT requires key, AFTER/BEFORE, pivot value, and value arguments")
+        key = args[0]
+        where = args[1].upper()
+        if where not in ["AFTER", "BEFORE"]:
+            raise ValueError("LINSERT where argument must be AFTER or BEFORE")
+        pivot = args[2]
+        value = args[3]
+        count = redis_client.linsert(key, where, pivot, value)
+        if count == -1:
+            return f"No pivot '{pivot}' found in list at key '{key}'"
+        return f"Inserted value '{value}' {where.lower()} '{pivot}' in list at key '{key}', new length: {count}"
     
+    # LINDEX command (List)
+    elif command == "LINDEX":
+        if len(args) != 2:
+            raise ValueError("LINDEX requires key and index arguments")
+        try:
+            index = int(args[1])
+        except ValueError:
+            raise ValueError("LINDEX index must be an integer")
+        value = redis_client.lindex(args[0], index)
+        if value is None:
+            return f"No value found at index {index} in list at key '{args[0]}'"
+        return f"Value at index {index} in list at key '{args[0]}': '{value}'"
+    #--------------------------------SET COMMANDS--------------------------------
     # SADD command (Set)
     elif command == "SADD":
         if len(args) < 2:
@@ -391,6 +426,13 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("TYPE requires exactly one key argument")
         key_type = redis_client.type(args[0])
         return f"Type of key '{args[0]}': {key_type}"
+    
+    # STRLEN command
+    elif command == "STRLEN":
+        if len(args) != 1:
+            raise ValueError("STRLEN requires exactly one key argument")
+        length = redis_client.strlen(args[0])
+        return f"Length of string at key '{args[0]}': {length}"
 
     else:
         raise ValueError(f"Unsupported Redis command: '{command}'")
