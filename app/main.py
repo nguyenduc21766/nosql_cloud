@@ -283,6 +283,15 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if value is None:
             return f"Field '{args[1]}' in key '{args[0]}' not found"
         return f"Value for field '{args[1]}' in key '{args[0]}': '{value}'"
+    # HDEL command
+    elif command == "HDEL":
+        if len(args) < 2:
+            raise ValueError("HDEL requires at least key and one field argument")
+        key = args[0]
+        fields = args[1:]
+        deleted = redis_client.hdel(key, *fields)
+        return f"Deleted {deleted} field(s) from hash at key '{key}'"
+
     #--------------------------------LIST COMMANDS--------------------------------
     # LPUSH command (List)
     elif command == "LPUSH":
