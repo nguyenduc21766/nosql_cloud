@@ -392,7 +392,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         key = args[0]
         members = args[1:]
         count = redis_client.sadd(key, *members)
-        return f"Added {count} new member(s) to set '{key}'"
+        return f"Added {count} new member(s) to set '{key}': {', '.join(members)}"
     
     # SMEMBERS command (Set)
     elif command == "SMEMBERS":
@@ -400,7 +400,28 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("SMEMBERS requires exactly one key argument")
         members = redis_client.smembers(args[0])
         return f"Members of set '{args[0]}': {list(members)}"
-    
+    # SCARD
+    elif command == "SCARD":
+        if len(args) != 1:
+            raise ValueError("SCARD requires exactly one key argument")
+        cardinality = redis_client.scard(args[0])
+        return f"Cardinality of set at key '{args[0]}': {cardinality}"    
+    # SISMEMBER command
+    elif command == "SISMEMBER":
+        if len(args) != 2:
+            raise ValueError("SISMEMBER requires key and member arguments")
+        key = args[0]
+        member = args[1]
+        exists = redis_client.sismember(key, member)
+        return f"Member '{member}' {'is' if exists else 'is not'} in set at key '{key}'"
+    # SREM command
+    elif command == "SREM":
+        if len(args) < 2:
+            raise ValueError("SREM requires at least key and one member argument")
+        key = args[0]
+        members = args[1:]
+        removed = redis_client.srem(key, *members)
+        return f"Removed {removed} member(s) from set at key '{key}'"
     # WAIT command
     elif command == "WAIT":
         if len(args) != 2:
