@@ -348,6 +348,33 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if value is None:
             return f"No value found at index {index} in list at key '{args[0]}'"
         return f"Value at index {index} in list at key '{args[0]}': '{value}'"
+    # RPOP command 
+    elif command == "RPOP":
+        if len(args) != 1:
+            raise ValueError("RPOP requires exactly one key argument")
+        value = redis_client.rpop(args[0])
+        if value is None:
+            return f"No value popped from list at key '{args[0]}' (list is empty)"
+        return f"Popped value '{value}' from right of list at key '{args[0]}'"
+    # LPOP command
+    elif command == "LPOP":
+        if len(args) != 1:
+            raise ValueError("LPOP requires exactly one key argument")
+        value = redis_client.lpop(args[0])
+        if value is None:
+            return f"No value popped from list at key '{args[0]}' (list is empty)"
+        return f"Popped value '{value}' from left of list at key '{args[0]}'"
+    # LTRIM
+    elif command == "LTRIM":
+        if len(args) != 3:
+            raise ValueError("LTRIM requires key, start, and stop arguments")
+        try:
+            start = int(args[1])
+            stop = int(args[2])
+        except ValueError:
+            raise ValueError("LTRIM start and stop must be integers")
+        redis_client.ltrim(args[0], start, stop)
+        return f"Trimmed list at key '{args[0]}' to range {start} to {stop}"
     #--------------------------------SET COMMANDS--------------------------------
     # SADD command (Set)
     elif command == "SADD":
