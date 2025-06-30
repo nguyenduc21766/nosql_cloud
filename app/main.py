@@ -632,7 +632,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON document: {e}")
             result = collection.insert_one(document)
-            return f"Inserted document"
+            return f"Inserted document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
         
         elif base_operation == "insertMany":
             if not params_str.strip():
@@ -644,7 +644,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON array: {e}")
             result = collection.insert_many(documents)
-            return f"Inserted {len(result.inserted_ids)} documents"
+            return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
         
         elif base_operation == "find":
             cursor = collection.find(query, {"_id": 0})
@@ -706,11 +706,11 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         # Apply chained methods for find operations
         if base_operation == "find":
             for method in chained_methods:
+                print(f"Processing method: {method}")  # Debug print
                 if method == ".count()":
-                    count = len(list(cursor))  # Replace deprecated cursor.count()
+                    count = collection.count_documents(query)  # Use count_documents instead of len(list(cursor))
                     return f"Document count for query {query}: {count}"
                 elif method == ".sort()":
-                    # Default sort by _id ascending
                     cursor = cursor.sort("_id", 1)
                 else:
                     raise ValueError(f"Unsupported chained method: {method}")
