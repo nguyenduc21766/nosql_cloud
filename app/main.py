@@ -107,26 +107,64 @@ def parse_redis_command(line: str) -> tuple:
 
 
 def parse_mongodb_command(line: str) -> tuple:
-    """Parse a MongoDB command line into collection and operation parameters."""
+    """Parse a MongoDB command line into collection, base operation, parameters, and chained methods."""
     line = line.strip()
     if not line:
         raise ValueError("Empty command")
     
-    # Handle different MongoDB command formats
     if line.startswith("db."):
-        # Format: db.collection.operation(params)
-        # Remove 'db.' prefix
         remaining = line[3:]  # Remove "db."
-        
-        # Find the first dot to separate collection from operation
         dot_index = remaining.find('.')
         if dot_index == -1:
             raise ValueError("Invalid MongoDB command format - missing collection.operation")
         
         collection = remaining[:dot_index]
-        operation_with_params = remaining[dot_index + 1:]  # Everything after collection.
+        operation_part = remaining[dot_index + 1:].strip()
         
-        return collection, operation_with_params
+        # Extract base operation and parameters
+        if '(' not in operation_part:
+            raise ValueError("Invalid MongoDB command format - missing parameters")
+        
+        paren_index = operation_part.find('(')
+        base_operation = operation_part[:paren_index].strip()
+        params_str = operation_part[paren_index:]
+        
+        # Handle chained methods
+        chained_methods = []
+        current_method = ""
+        open_parens = 0
+        
+        i = 0
+        while i < len(params_str):
+            char = params_str[i]
+            if char == '(':
+                open_parens += 1
+            elif char == ')':
+                open_parens -= 1
+                if open_parens == 0 and i + 1 < len(params_str) and params_str[i + 1] == '.':
+                    if current_method:
+                        chained_methods.append(current_method.strip())
+                    current_method = ""
+                    i += 1  # Skip the dot
+                    continue
+            if open_parens == 0 and char == '.' and i + 1 < len(params_str):
+                if current_method:
+                    chained_methods.append(current_method.strip())
+                current_method = ""
+            else:
+                current_method += char
+            i += 1
+        
+        if current_method:
+            chained_methods.append(current_method.strip())
+        
+        # Extract the main parameters (up to the first closing parenthesis)
+        params_end = params_str.find(')')
+        if params_end == -1:
+            raise ValueError("Missing closing parenthesis in operation")
+        params_str = params_str[1:params_end].strip()  # Remove '(' and ')'
+        
+        return collection, base_operation, params_str, chained_methods
     else:
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -571,109 +609,70 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         raise ValueError(f"Unsupported Redis command: '{command}'")
 
 
-def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
-    """Execute a MongoDB command and return the result as a string."""
+def execute_mongodb_command(collection_name: str, base_operation: str, params_str: str, chained_methods: list) -> str:
+    """Execute a MongoDB command and return the result as a string, supporting chained methods."""
     
     try:
         # Get the collection
         collection = mongo_db[collection_name]
         
-        # Parse the operation and parameters
-        operation_params = operation_params.strip()
+        # Parse parameters
+        if params_str.strip():
+            try:
+                query = json.loads(params_str)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid query JSON: {e}")
+        else:
+            query = {}
         
-        # Extract operation name and parameters
-        if "(" not in operation_params:
-            raise ValueError(f"Invalid operation format: {operation_params}")
-        
-        paren_index = operation_params.find("(")
-        operation_name = operation_params[:paren_index]
-        
-        # Extract parameters (everything between first '(' and last ')')
-        params_start = paren_index + 1
-        params_end = operation_params.rfind(")")
-        
-        if params_end == -1:
-            raise ValueError("Missing closing parenthesis in operation")
-        
-        params_str = operation_params[params_start:params_end]
-        
-        # Handle different operations
-        if operation_name == "insertOne":
+        # Execute base operation
+        if base_operation == "insertOne":
             if not params_str.strip():
                 raise ValueError("insertOne requires a document parameter")
-            
-            # Parse the JSON document
             try:
                 document = json.loads(params_str)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON document: {e}")
-            
             result = collection.insert_one(document)
-            return f"Inserted document"
+            return f"Inserted document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
         
-        elif operation_name == "insertMany":
+        elif base_operation == "insertMany":
             if not params_str.strip():
                 raise ValueError("insertMany requires an array parameter")
-            
             try:
                 documents = json.loads(params_str)
                 if not isinstance(documents, list):
                     raise ValueError("insertMany requires an array of documents")
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON array: {e}")
-            
             result = collection.insert_many(documents)
-            return f"Inserted {len(result.inserted_ids)} documents"
+            return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
         
-        elif operation_name == "find":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            
-            results = list(collection.find(query, {"_id": 0}))
-            # Convert ObjectId to string for JSON serialization
-            for doc in results:
-                if '_id' in doc:
-                    doc['_id'] = str(doc['_id'])
-            
-            return f"Found {len(results)} document(s): {results}"
-        
-        elif operation_name == "findOne":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            
-            result = collection.find_one(query, {"_id": 0})  
+        elif base_operation == "find":
+            cursor = collection.find(query, {"_id": 0})
+        elif base_operation == "findOne":
+            result = collection.find_one(query, {"_id": 0})
             if result:
                 if '_id' in result:
                     result['_id'] = str(result['_id'])
                 return f"Found document: {result}"
-            else:
-                return "No document found"
+            return "No document found"
         
-        elif operation_name == "updateOne":
-            # For updateOne, we expect two JSON objects: filter and update
+        elif base_operation == "updateOne":
+            if not params_str.strip():
+                raise ValueError("updateOne requires filter and update parameters")
             try:
-                # Split parameters - this is tricky with nested JSON
-                # For now, let's use a simple approach
-                params = eval(f"[{params_str}]")
-                if len(params) != 2:
+                parts = [p.strip() for p in params_str.split(',')]
+                if len(parts) != 2:
                     raise ValueError("updateOne requires filter and update parameters")
-            except Exception as e:
+                filter_query = json.loads(parts[0])
+                update_data = json.loads(parts[1])
+            except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid updateOne parameters: {e}")
-            
-            result = collection.update_one(params[0], params[1])
+            result = collection.update_one(filter_query, update_data)
             return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
         
-        elif operation_name == "deleteOne":
+        elif base_operation == "deleteOne":
             if not params_str.strip():
                 query = {}
             else:
@@ -681,11 +680,10 @@ def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
                     query = json.loads(params_str)
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid query JSON: {e}")
-            
             result = collection.delete_one(query)
             return f"Deleted {result.deleted_count} document(s)"
         
-        elif operation_name == "countDocuments":
+        elif base_operation == "countDocuments":
             if params_str.strip():
                 try:
                     query = json.loads(params_str)
@@ -693,21 +691,41 @@ def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
                     raise ValueError(f"Invalid query JSON: {e}")
             else:
                 query = {}
-            
             count = collection.count_documents(query)
             return f"Document count: {count}"
         
-        elif operation_name == "drop":
+        elif base_operation == "drop":
             collection.drop()
             return f"Collection '{collection_name}' dropped"
         
         else:
-            raise ValueError(f"Unsupported MongoDB operation: {operation_name}")
+            raise ValueError(f"Unsupported MongoDB operation: {base_operation}")
+        
+        # Check for unsupported chaining
+        if chained_methods and base_operation != "find":
+            raise ValueError(f"Chained methods are only supported with 'find' operation")
+        
+        # Apply chained methods for find operations
+        if base_operation == "find":
+            for method in chained_methods:
+                if method == ".count()":
+                    count = len(list(cursor))  # Replace deprecated cursor.count()
+                    return f"Document count for query {query}: {count}"
+                elif method == ".sort()":
+                    # Default sort by _id ascending
+                    cursor = cursor.sort("_id", 1)
+                else:
+                    raise ValueError(f"Unsupported chained method: {method}")
+            
+            # Convert results to list after applying chained methods
+            results = list(cursor)
+            for doc in results:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+            return f"Found {len(results)} document(s): {results}"
             
     except Exception as e:
-        # Re-raise with more context
         raise ValueError(f"MongoDB execution error: {str(e)}")
-
 
 def reset_mongodb():
     """Reset MongoDB database by dropping all collections."""
@@ -744,8 +762,8 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
                     output_lines.append(result)
                 
                 elif database == "mongodb":
-                    collection, operation_params = parse_mongodb_command(line)
-                    result = execute_mongodb_command(collection, operation_params)
+                    collection, base_operation, params_str, chained_methods = parse_mongodb_command(line)
+                    result = execute_mongodb_command(collection, base_operation, params_str, chained_methods)
                     output_lines.append(result)
 
             # Reset database after processing
