@@ -147,27 +147,25 @@ def parse_mongodb_command(line: str) -> tuple:
                 open_parens += 1
             elif char == ')':
                 open_parens -= 1
-                if open_parens == 0 and i + 1 < len(chained_part) and chained_part[i + 1] == '.':
-                    if current_method:
+                if open_parens == 0:
+                    current_method += char
+                    if current_method.startswith('.') and current_method.endswith('()'):
                         chained_methods.append(current_method.strip())
                     current_method = ""
-                    i += 1  # Skip the dot
-                    continue
-            if open_parens == 0 and char == '.' and i + 1 < len(chained_part):
-                if current_method:
+            elif open_parens == 0 and char == '.':
+                if current_method and current_method.startswith('.') and current_method.endswith('()'):
                     chained_methods.append(current_method.strip())
-                current_method = ""
+                current_method = "."
             else:
                 current_method += char
             i += 1
         
-        if current_method:
+        if current_method and current_method.startswith('.') and current_method.endswith('()'):
             chained_methods.append(current_method.strip())
         
         return collection, base_operation, params_str, chained_methods
     else:
         raise ValueError("MongoDB commands must start with 'db.'")
-
 def safe_eval_mongodb_params(params_str: str):
     """Safely evaluate MongoDB parameters string to Python objects."""
     if not params_str.strip():
