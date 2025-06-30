@@ -422,6 +422,81 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         members = args[1:]
         removed = redis_client.srem(key, *members)
         return f"Removed {removed} member(s) from set at key '{key}'"
+    #--------------------------------------SortedSet----------------------------------------------
+    elif command == "ZADD":
+        if len(args) < 3 or len(args) % 2 == 0:
+            raise ValueError("ZADD requires key, at least one score-member pair (e.g., key score1 member1 score2 member2)")
+        key = args[0]
+        # Parse score-member pairs: args[1::2] are scores, args[2::2] are members
+        scores = [float(arg) for arg in args[1::2]]
+        members = args[2::2]
+        if len(scores) != len(members):
+            raise ValueError("ZADD requires an equal number of scores and members")
+        # Prepare dictionary of score-member pairs
+        score_member_dict = {member: score for score, member in zip(scores, members)}
+        # Add only new members with nx=True
+        added = redis_client.zadd(key, score_member_dict, nx=True)
+        # List the members that were added (based on input, assuming nx=True ensures only new ones)
+        added_members = [member for member in members[:added]] if added > 0 else []
+        return f"Added {added} member(s) to sorted set at key '{key}': {added_members}"
+
+    elif command == "ZSCORE":
+        if len(args) != 2:
+            raise ValueError("ZSCORE requires key and member arguments")
+        key = args[0]
+        member = args[1]
+        score = redis_client.zscore(key, member)
+        if score is None:
+            return f"No score found for member '{member}' in sorted set at key '{key}'"
+        return f"Score for member '{member}' in sorted set at key '{key}': {score}"
+
+    elif command == "ZINCRBY":
+        if len(args) != 3:
+            raise ValueError("ZINCRBY requires key, increment, and member arguments")
+        try:
+            increment = float(args[1])
+        except ValueError:
+            raise ValueError("ZINCRBY increment must be a number")
+        key = args[0]
+        member = args[2]
+        new_score = redis_client.zincrby(key, increment, member)
+        return f"Increased score for member '{member}' by {increment} in sorted set at key '{key}' to {new_score}"
+
+    elif command == "ZREM":
+        if len(args) < 2:
+            raise ValueError("ZREM requires at least key and one member argument")
+        key = args[0]
+        members = args[1:]
+        removed = redis_client.zrem(key, *members)
+        return f"Removed {removed} member(s) from sorted set at key '{key}'"
+
+    elif command == "ZRANGE":
+        if len(args) < 3:
+            raise ValueError("ZRANGE requires key, start, and stop arguments")
+        try:
+            start = int(args[1])
+            stop = int(args[2])
+        except ValueError:
+            raise ValueError("ZRANGE start and stop must be integers")
+        key = args[0]
+        with_scores = len(args) > 3 and args[3].upper() == "WITHSCORES"
+        if with_scores:
+            results = redis_client.zrange(key, start, stop, withscores=True)
+            return f"Values in sorted set '{key}' from {start} to {stop} with scores: {[(m.decode() if isinstance(m, bytes) else m, s) for m, s in results]}"
+        else:
+            results = redis_client.zrange(key, start, stop)
+            return f"Values in sorted set '{key}' from {start} to {stop}: {[m.decode() if isinstance(m, bytes) else m for m in results]}"
+
+    #------------------------------------PUBSUB--------------------------------
+    elif command == "PUBLISH":
+        if len(args) != 2:
+            raise ValueError("PUBLISH requires channel and message arguments")
+        channel = args[0]
+        message = args[1]
+        count = redis_client.publish(channel, message)
+        return f"Published message '{message}' to channel '{channel}', reached {count} subscriber(s)"
+
+
     # WAIT command
     elif command == "WAIT":
         if len(args) != 2:
