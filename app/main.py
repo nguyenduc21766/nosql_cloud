@@ -127,27 +127,33 @@ def parse_mongodb_command(line: str) -> tuple:
         
         paren_index = operation_part.find('(')
         base_operation = operation_part[:paren_index].strip()
-        params_str = operation_part[paren_index:]
         
-        # Handle chained methods
+        # Extract the main parameters up to the first closing parenthesis
+        params_end = operation_part.find(')')
+        if params_end == -1:
+            raise ValueError("Missing closing parenthesis in operation")
+        params_str = operation_part[paren_index + 1:params_end].strip()  # Parameters between '(' and ')'
+        
+        # Extract the rest for chained methods
+        chained_part = operation_part[params_end + 1:].strip()
         chained_methods = []
         current_method = ""
         open_parens = 0
         
         i = 0
-        while i < len(params_str):
-            char = params_str[i]
+        while i < len(chained_part):
+            char = chained_part[i]
             if char == '(':
                 open_parens += 1
             elif char == ')':
                 open_parens -= 1
-                if open_parens == 0 and i + 1 < len(params_str) and params_str[i + 1] == '.':
+                if open_parens == 0 and i + 1 < len(chained_part) and chained_part[i + 1] == '.':
                     if current_method:
                         chained_methods.append(current_method.strip())
                     current_method = ""
                     i += 1  # Skip the dot
                     continue
-            if open_parens == 0 and char == '.' and i + 1 < len(params_str):
+            if open_parens == 0 and char == '.' and i + 1 < len(chained_part):
                 if current_method:
                     chained_methods.append(current_method.strip())
                 current_method = ""
@@ -157,12 +163,6 @@ def parse_mongodb_command(line: str) -> tuple:
         
         if current_method:
             chained_methods.append(current_method.strip())
-        
-        # Extract the main parameters (up to the first closing parenthesis)
-        params_end = params_str.find(')')
-        if params_end == -1:
-            raise ValueError("Missing closing parenthesis in operation")
-        params_str = params_str[1:params_end].strip()  # Remove '(' and ')'
         
         return collection, base_operation, params_str, chained_methods
     else:
@@ -634,7 +634,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON document: {e}")
             result = collection.insert_one(document)
-            return f"Inserted document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
+            return f"Inserted document."
         
         elif base_operation == "insertMany":
             if not params_str.strip():
@@ -646,7 +646,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON array: {e}")
             result = collection.insert_many(documents)
-            return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
+            return f"Inserted {len(result.inserted_ids)} documents."
         
         elif base_operation == "find":
             cursor = collection.find(query, {"_id": 0})
