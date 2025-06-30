@@ -105,16 +105,18 @@ def parse_redis_command(line: str) -> tuple:
     args = parts[1:]
     return command, args
 
+
 def parse_mongodb_command(line: str) -> tuple:
-    """Parse a MongoDB command line into collection and operation parameters, handling chained methods."""
+    """Parse a MongoDB command line into collection and operation parameters."""
     line = line.strip()
     if not line:
         raise ValueError("Empty command")
     
     # Handle different MongoDB command formats
     if line.startswith("db."):
+        # Format: db.collection.operation(params)
         # Remove 'db.' prefix
-        remaining = line[3:]
+        remaining = line[3:]  # Remove "db."
         
         # Find the first dot to separate collection from operation
         dot_index = remaining.find('.')
@@ -124,19 +126,7 @@ def parse_mongodb_command(line: str) -> tuple:
         collection = remaining[:dot_index]
         operation_with_params = remaining[dot_index + 1:]  # Everything after collection.
         
-        # Check for chained methods (e.g., .count())
-        if '(' in operation_with_params:
-            paren_index = operation_with_params.find('(')
-            base_operation = operation_with_params[:paren_index].strip()
-            params_str = operation_with_params[paren_index:]
-            
-            # Look for chained .count() after the closing parenthesis
-            count_index = params_str.rfind(')')
-            if count_index != -1 and count_index + 1 < len(params_str) and params_str[count_index + 1:].strip().startswith('.count()'):
-                return collection, f"{base_operation}{params_str[:count_index + 1]}", True  # Include count flag
-            return collection, operation_with_params, False
-        else:
-            raise ValueError("Invalid MongoDB command format - missing parameters")
+        return collection, operation_with_params
     else:
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -581,7 +571,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         raise ValueError(f"Unsupported Redis command: '{command}'")
 
 
-def execute_mongodb_command(collection_name: str, operation_params: str, is_count: bool = False) -> str:
+def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
     """Execute a MongoDB command and return the result as a string."""
     
     try:
@@ -605,30 +595,35 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
         if params_end == -1:
             raise ValueError("Missing closing parenthesis in operation")
         
-        params_str = operation_params[params_start:params_end].strip()
+        params_str = operation_params[params_start:params_end]
         
         # Handle different operations
         if operation_name == "insertOne":
             if not params_str.strip():
                 raise ValueError("insertOne requires a document parameter")
+            
+            # Parse the JSON document
             try:
                 document = json.loads(params_str)
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON document: {e}")
+            
             result = collection.insert_one(document)
-            return f"Inserted 1 document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
+            return f"Inserted document"
         
         elif operation_name == "insertMany":
             if not params_str.strip():
                 raise ValueError("insertMany requires an array parameter")
+            
             try:
                 documents = json.loads(params_str)
                 if not isinstance(documents, list):
                     raise ValueError("insertMany requires an array of documents")
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON array: {e}")
+            
             result = collection.insert_many(documents)
-            return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
+            return f"Inserted {len(result.inserted_ids)} documents"
         
         elif operation_name == "find":
             if params_str.strip():
@@ -639,15 +634,13 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
             else:
                 query = {}
             
-            if is_count:
-                count = collection.count_documents(query)
-                return f"Document count for query {query}: {count}"
-            else:
-                results = list(collection.find(query, {"_id": 0}))
-                for doc in results:
-                    if '_id' in doc:
-                        doc['_id'] = str(doc['_id'])
-                return f"Found {len(results)} document(s): {results}"
+            results = list(collection.find(query, {"_id": 0}))
+            # Convert ObjectId to string for JSON serialization
+            for doc in results:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+            
+            return f"Found {len(results)} document(s): {results}"
         
         elif operation_name == "findOne":
             if params_str.strip():
@@ -657,25 +650,27 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
                     raise ValueError(f"Invalid query JSON: {e}")
             else:
                 query = {}
-            result = collection.find_one(query, {"_id": 0})
+            
+            result = collection.find_one(query, {"_id": 0})  
             if result:
                 if '_id' in result:
                     result['_id'] = str(result['_id'])
                 return f"Found document: {result}"
-            return "No document found"
+            else:
+                return "No document found"
         
         elif operation_name == "updateOne":
-            if not params_str.strip():
-                raise ValueError("updateOne requires filter and update parameters")
+            # For updateOne, we expect two JSON objects: filter and update
             try:
-                params_parts = [p.strip() for p in params_str.split(',')]
-                if len(params_parts) != 2:
+                # Split parameters - this is tricky with nested JSON
+                # For now, let's use a simple approach
+                params = eval(f"[{params_str}]")
+                if len(params) != 2:
                     raise ValueError("updateOne requires filter and update parameters")
-                filter_query = json.loads(params_parts[0])
-                update_data = json.loads(params_parts[1])
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in updateOne parameters: {e}")
-            result = collection.update_one(filter_query, {"$set": update_data})
+            except Exception as e:
+                raise ValueError(f"Invalid updateOne parameters: {e}")
+            
+            result = collection.update_one(params[0], params[1])
             return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
         
         elif operation_name == "deleteOne":
@@ -686,6 +681,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
                     query = json.loads(params_str)
                 except json.JSONDecodeError as e:
                     raise ValueError(f"Invalid query JSON: {e}")
+            
             result = collection.delete_one(query)
             return f"Deleted {result.deleted_count} document(s)"
         
@@ -697,6 +693,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
                     raise ValueError(f"Invalid query JSON: {e}")
             else:
                 query = {}
+            
             count = collection.count_documents(query)
             return f"Document count: {count}"
         
@@ -708,6 +705,7 @@ def execute_mongodb_command(collection_name: str, operation_params: str, is_coun
             raise ValueError(f"Unsupported MongoDB operation: {operation_name}")
             
     except Exception as e:
+        # Re-raise with more context
         raise ValueError(f"MongoDB execution error: {str(e)}")
 
 
