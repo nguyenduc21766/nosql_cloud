@@ -277,21 +277,42 @@ def execute_redis_command(command: str, args: List[str]) -> str:
 
     # SCAN command
     elif command == "SCAN":
-        if len(args) > 2:
-            raise ValueError("SCAN accepts at most two arguments: [cursor] [MATCH pattern]")
+        if len(args) < 1 or len(args) > 4:
+            raise ValueError("SCAN accepts 1 to 4 arguments: [cursor] [MATCH pattern] [COUNT number]")
         cursor = 0
         match_pattern = None
+        count = None
         
         try:
-            # Parse optional arguments
-            if args:
-                cursor = int(args[0]) if args[0].isdigit() else 0
-                if len(args) == 2 and args[1].upper().startswith("MATCH"):
-                    match_pattern = args[1].split(" ", 1)[1]  # Get pattern after MATCH
+            # Parse mandatory cursor
+            cursor = int(args[0]) if args[0].isdigit() else 0
+            
+            # Parse optional MATCH and COUNT
+            for i in range(1, len(args)):
+                arg = args[i].upper()
+                if arg.startswith("MATCH"):
+                    # Join remaining args after MATCH as the pattern
+                    match_args = args[i + 1:] if i + 1 < len(args) else []
+                    match_pattern = " ".join(match_args) if match_args else None
+                    if not match_pattern:
+                        raise ValueError("MATCH requires a pattern")
+                    break  # MATCH should be the last option if present
+                elif arg.startswith("COUNT"):
+                    # Extract number after COUNT
+                    count_parts = args[i].split(" ", 1)
+                    if len(count_parts) != 2 or not count_parts[1].isdigit():
+                        raise ValueError("COUNT requires a positive integer")
+                    count = int(count_parts[1])
+                    if count <= 0:
+                        raise ValueError("COUNT must be a positive integer")
             
             # Execute SCAN
-            if match_pattern:
+            if match_pattern and count:
+                cursor, keys = redis_client.scan(cursor, match=match_pattern, count=count)
+            elif match_pattern:
                 cursor, keys = redis_client.scan(cursor, match=match_pattern)
+            elif count:
+                cursor, keys = redis_client.scan(cursor, count=count)
             else:
                 cursor, keys = redis_client.scan(cursor)
             
@@ -300,7 +321,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         except redis.RedisError as e:
             raise ValueError(f"Failed to execute SCAN: {str(e)}")
         except ValueError as e:
-            raise ValueError(f"Invalid SCAN cursor or argument: {str(e)}")
+            raise ValueError(f"Invalid SCAN cursor, MATCH pattern, or COUNT: {str(e)}")
         
     # DEL command
     elif command == "DEL":
