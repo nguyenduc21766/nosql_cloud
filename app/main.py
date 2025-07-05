@@ -634,7 +634,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON document: {e}")
             result = collection.insert_one(document)
-            return f"Inserted document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
+            return f"Inserted document"
 
         elif base_operation == "insertMany":
             if not params_str.strip():
@@ -646,7 +646,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             except json.JSONDecodeError as e:
                 raise ValueError(f"Invalid JSON array: {e}")
             result = collection.insert_many(documents)
-            return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
+            return f"Inserted {len(result.inserted_ids)} documents"
 
         elif base_operation == "find":
             cursor = collection.find(query, {"_id": 0})
