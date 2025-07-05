@@ -761,6 +761,7 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
                 
                 elif database == "mongodb":
                     collection, base_operation, params_str, chained_methods = parse_mongodb_command(line)
+                    logging.info(f"Parsed command: {line}, Result: (collection={collection}, base_operation={base_operation}, params_str={params_str}, chained_methods={chained_methods})")
                     result = execute_mongodb_command(collection, base_operation, params_str, chained_methods)
                     output_lines.append(result)
 
