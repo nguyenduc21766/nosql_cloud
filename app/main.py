@@ -295,8 +295,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             else:
                 cursor, keys = redis_client.scan(cursor)
             
-            # Decode keys from bytes to strings
-            keys = [key.decode() for key in keys]
+            # Keys are already strings due to decode_responses=True
             return f"SCAN cursor: {cursor}, keys: {keys}"
         except redis.RedisError as e:
             raise ValueError(f"Failed to execute SCAN: {str(e)}")
