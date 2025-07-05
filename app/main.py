@@ -252,8 +252,8 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         try:
             # Retrieve values for all specified keys
             values = redis_client.mget(args)
-            # Decode bytes to strings and handle None values
-            result = [v.decode() if v is not None else None for v in values]
+            # Handle values as strings or None (no decoding needed)
+            result = [v if v is not None else None for v in values]
             # Create a mapping of keys to values for the response
             key_value_pairs = {key: value for key, value in zip(args, result)}
             if all(v is None for v in result):
