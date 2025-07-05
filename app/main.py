@@ -227,7 +227,42 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if value is None:
             return f"Key '{key}' not found"
         return f"Value for key '{key}': '{value}'"
+
+    # MSET command
+    elif command == "MSET":
+        if len(args) < 2 or len(args) % 2 != 0:
+            raise ValueError("MSET requires an even number of arguments (key1 value1 key2 value2 ...)")
+        
+        # Pair up keys and values
+        key_value_pairs = {args[i]: args[i + 1] for i in range(0, len(args), 2)}
+        try:
+            # Use mset to set all key-value pairs atomically
+            redis_client.mset(key_value_pairs)
+            # Return a confirmation message with all set pairs
+            set_pairs = ", ".join([f"{k}: {v}" for k, v in key_value_pairs.items()])
+            return f"Set multiple keys: {set_pairs}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute MSET: {str(e)}")
+
+    # MGET command
+    elif command == "MGET":
+        if not args:
+            raise ValueError("MGET requires at least one key argument")
+        
+        try:
+            # Retrieve values for all specified keys
+            values = redis_client.mget(args)
+            # Decode bytes to strings and handle None values
+            result = [v.decode() if v is not None else None for v in values]
+            # Create a mapping of keys to values for the response
+            key_value_pairs = {key: value for key, value in zip(args, result)}
+            if all(v is None for v in result):
+                return f"No values found for keys: {', '.join(args)}"
+            return f"Retrieved values: {', '.join([f'{k}: {v}' if v is not None else f'{k}: <not found>' for k, v in key_value_pairs.items()])}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute MGET: {str(e)}")
     
+        
     # DEL command
     elif command == "DEL":
         if not args:
