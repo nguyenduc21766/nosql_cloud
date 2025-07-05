@@ -148,7 +148,7 @@ def parse_mongodb_command(line: str) -> tuple:
                 open_parens += 1
             elif char == ')':
                 open_parens -= 1
-                if open_parens == 0:
+                if open_parens == 0 and current_method:  # Only process if we have a method
                     current_method += char
                     if current_method.startswith('.') and current_method.endswith('()'):
                         chained_methods.append(current_method.strip())
