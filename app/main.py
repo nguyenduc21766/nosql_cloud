@@ -195,6 +195,47 @@ def safe_eval_mongodb_params(params_str: str):
 
 def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
+
+
+    # DBSIZE command
+    elif command == "DBSIZE":
+        if args:
+            raise ValueError("DBSIZE does not accept arguments")
+        
+        try:
+            # Get the number of keys in the current database
+            size = redis_client.dbsize()
+            return f"Number of keys in database: {size}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute DBSIZE: {str(e)}")
+
+    # SCAN command
+    elif command == "SCAN":
+        if len(args) > 2:
+            raise ValueError("SCAN accepts at most two arguments: [cursor] [MATCH pattern]")
+        cursor = 0
+        match_pattern = None
+        
+        try:
+            # Parse optional arguments
+            if args:
+                cursor = int(args[0]) if args[0].isdigit() else 0
+                if len(args) == 2 and args[1].upper().startswith("MATCH"):
+                    match_pattern = args[1].split(" ", 1)[1]  # Get pattern after MATCH
+            
+            # Execute SCAN
+            if match_pattern:
+                cursor, keys = redis_client.scan(cursor, match=match_pattern)
+            else:
+                cursor, keys = redis_client.scan(cursor)
+            
+            # Decode keys from bytes to strings
+            keys = [key.decode() for key in keys]
+            return f"SCAN cursor: {cursor}, keys: {keys}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute SCAN: {str(e)}")
+        except ValueError as e:
+            raise ValueError(f"Invalid SCAN cursor or argument: {str(e)}")
     
     # SET command
     if command == "SET":
