@@ -705,6 +705,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         
         # Apply chained methods for find operations
         if base_operation == "find":
+            logging.info(f"Chained methods: {chained_methods}")  # Log the methods
             for method in chained_methods:
                 logging.info(f"Processing method: {method}")  # Debug logging
                 if method == ".count()":
@@ -724,7 +725,6 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             
     except Exception as e:
         raise ValueError(f"MongoDB execution error: {str(e)}")
-
 def reset_mongodb():
     """Reset MongoDB database by dropping all collections."""
     try:
