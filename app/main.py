@@ -140,6 +140,7 @@ def parse_mongodb_command(line: str) -> tuple:
         current_method = ""
         open_parens = 0
         
+        logging.info(f"Parsing chained part: '{chained_part}' from command: '{line}'")
         i = 0
         while i < len(chained_part):
             char = chained_part[i]
@@ -163,6 +164,7 @@ def parse_mongodb_command(line: str) -> tuple:
         if current_method and current_method.startswith('.') and current_method.endswith('()'):
             chained_methods.append(current_method.strip())
         
+        logging.info(f"Parsed result: (collection={collection}, base_operation={base_operation}, params_str={params_str}, chained_methods={chained_methods})")
         return collection, base_operation, params_str, chained_methods
     else:
         raise ValueError("MongoDB commands must start with 'db.'")
@@ -609,11 +611,11 @@ def execute_redis_command(command: str, args: List[str]) -> str:
 
 def execute_mongodb_command(collection_name: str, base_operation: str, params_str: str, chained_methods: list) -> str:
     """Execute a MongoDB command and return the result as a string, supporting chained methods."""
-    
+
     try:
         # Get the collection
         collection = mongo_db[collection_name]
-        
+
         # Parse parameters
         if params_str.strip():
             try:
@@ -622,7 +624,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                 raise ValueError(f"Invalid query JSON: {e}")
         else:
             query = {}
-        
+
         # Execute base operation
         if base_operation == "insertOne":
             if not params_str.strip():
@@ -633,7 +635,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                 raise ValueError(f"Invalid JSON document: {e}")
             result = collection.insert_one(document)
             return f"Inserted document with ID: {str(result.inserted_id) if result.inserted_id else 'N/A'}"
-        
+
         elif base_operation == "insertMany":
             if not params_str.strip():
                 raise ValueError("insertMany requires an array parameter")
@@ -645,7 +647,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                 raise ValueError(f"Invalid JSON array: {e}")
             result = collection.insert_many(documents)
             return f"Inserted {len(result.inserted_ids)} documents with IDs: {[str(id) for id in result.inserted_ids]}"
-        
+
         elif base_operation == "find":
             cursor = collection.find(query, {"_id": 0})
         elif base_operation == "findOne":
@@ -655,7 +657,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                     result['_id'] = str(result['_id'])
                 return f"Found document: {result}"
             return "No document found"
-        
+
         elif base_operation == "updateOne":
             if not params_str.strip():
                 raise ValueError("updateOne requires filter and update parameters")
@@ -669,7 +671,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                 raise ValueError(f"Invalid updateOne parameters: {e}")
             result = collection.update_one(filter_query, update_data)
             return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
-        
+
         elif base_operation == "deleteOne":
             if not params_str.strip():
                 query = {}
@@ -680,7 +682,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                     raise ValueError(f"Invalid query JSON: {e}")
             result = collection.delete_one(query)
             return f"Deleted {result.deleted_count} document(s)"
-        
+
         elif base_operation == "countDocuments":
             if params_str.strip():
                 try:
@@ -691,40 +693,40 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
                 query = {}
             count = collection.count_documents(query)
             return f"Document count: {count}"
-        
+
         elif base_operation == "drop":
             collection.drop()
             return f"Collection '{collection_name}' dropped"
-        
+
         else:
             raise ValueError(f"Unsupported MongoDB operation: {base_operation}")
-        
+
         # Check for unsupported chaining
         if chained_methods and base_operation != "find":
             raise ValueError(f"Chained methods are only supported with 'find' operation")
-        
+
         # Apply chained methods for find operations
         if base_operation == "find":
-            logging.info(f"Chained methods: {chained_methods}")  # Log the methods
-            for method in chained_methods:
-                logging.info(f"Processing method: {method}")  # Debug logging
+            logging.info(f"Chained methods: {chained_methods}")
+            if chained_methods:
+                method = chained_methods[0]
+                logging.info(f"Processing method: {method}")
                 if method == ".count()":
                     count = collection.count_documents(query)
                     return f"Document count for query {query}: {count}"
                 elif method == ".sort()":
                     cursor = cursor.sort("_id", 1)
                 else:
-                    raise ValueError(f"Unsupported chained method: {method}")
-            
-            # Convert results to list after applying chained methods
+                    logging.warning(f"Ignoring unsupported chained method: {method}")
             results = list(cursor)
             for doc in results:
                 if '_id' in doc:
                     doc['_id'] = str(doc['_id'])
             return f"Found {len(results)} document(s): {results}"
-            
+
     except Exception as e:
         raise ValueError(f"MongoDB execution error: {str(e)}")
+
 def reset_mongodb():
     """Reset MongoDB database by dropping all collections."""
     try:
