@@ -706,9 +706,9 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         # Apply chained methods for find operations
         if base_operation == "find":
             for method in chained_methods:
-                print(f"Processing method: {method}")  # Debug print
+                logging.info(f"Processing method: {method}")  # Debug logging
                 if method == ".count()":
-                    count = collection.count_documents(query)  # Use count_documents instead of len(list(cursor))
+                    count = collection.count_documents(query)
                     return f"Document count for query {query}: {count}"
                 elif method == ".sort()":
                     cursor = cursor.sort("_id", 1)
