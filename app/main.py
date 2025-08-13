@@ -21,26 +21,37 @@ mongo_client = None
 mongo_db = None
 
 def init_databases():
-    """Initialize database connections with retry logic"""
+    """Initialize database connections with retry logic and short timeouts"""
     global redis_client, mongo_client, mongo_db
     
-    # Initialize Redis
+    # Initialize Redis with shorter timeout
     try:
-        redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
+        redis_client = redis.Redis(
+            host="localhost", 
+            port=6379, 
+            decode_responses=True,
+            socket_connect_timeout=3,  # 3 second connection timeout
+            socket_timeout=3,          # 3 second socket timeout
+            retry_on_timeout=False     # Don't retry on timeout
+        )
+        # Test connection with timeout
         redis_client.ping()
         logger.info("Redis connection established")
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
         raise
     
-    # Initialize MongoDB with retry
+    # Initialize MongoDB with shorter timeouts
     try:
         mongo_client = pymongo.MongoClient(
             "mongodb://localhost:27017/",
-            serverSelectionTimeoutMS=5000,  # 5 second timeout
-            connectTimeoutMS=5000
+            serverSelectionTimeoutMS=3000,  # 3 second timeout (reduced from 5)
+            connectTimeoutMS=3000,          # 3 second timeout (reduced from 5)
+            socketTimeoutMS=3000,           # 3 second socket timeout
+            maxPoolSize=10,                 # Limit connection pool
+            waitQueueTimeoutMS=3000         # Queue timeout
         )
-        # Test the connection
+        # Test the connection with timeout
         mongo_client.admin.command('ping')
         mongo_db = mongo_client["student_db"]
         logger.info("MongoDB connection established")
@@ -76,25 +87,43 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint to verify database connections"""
+    """Health check endpoint to verify database connections with timeout"""
     health_status = {"redis": False, "mongodb": False}
     
     try:
+        # Use shorter timeout for health checks
         redis_client.ping()
         health_status["redis"] = True
     except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
+        logger.error(f"Redis health check failed: {e}")
     
     try:
+        # MongoDB ping with timeout
         mongo_client.admin.command('ping')
         health_status["mongodb"] = True
     except Exception as e:
-        logger.error(f"MongoDB connection failed: {e}")
+        logger.error(f"MongoDB health check failed: {e}")
     
     return {
         "status": "healthy" if all(health_status.values()) else "degraded",
         "databases": health_status
     }
+
+def check_database_connections():
+    """Check if database connections are still valid, with timeout protection"""
+    try:
+        # Quick Redis check with timeout
+        redis_client.ping()
+    except Exception as e:
+        logger.error(f"Redis connection lost: {e}")
+        raise HTTPException(status_code=503, detail="Redis database unavailable")
+    
+    try:
+        # Quick MongoDB check with timeout
+        mongo_client.admin.command('ping')
+    except Exception as e:
+        logger.error(f"MongoDB connection lost: {e}")
+        raise HTTPException(status_code=503, detail="MongoDB database unavailable")
 
 def parse_redis_command(line: str) -> tuple:
     """Parse a Redis command line into command and arguments."""
@@ -168,6 +197,7 @@ def parse_mongodb_command(line: str) -> tuple:
         return collection, base_operation, params_str, chained_methods
     else:
         raise ValueError("MongoDB commands must start with 'db.'")
+
 def safe_eval_mongodb_params(params_str: str):
     """Safely evaluate MongoDB parameters string to Python objects."""
     if not params_str.strip():
@@ -195,7 +225,6 @@ def safe_eval_mongodb_params(params_str: str):
 
 def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
-
 
     # SET command
     if command == "SET":
@@ -837,6 +866,9 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
     # Check auth token
     if authorization != f"Bearer {EXPECTED_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Quick connection check with timeout protection
+    check_database_connections()
 
     database = submission.database.lower()
     if database not in ["redis", "mongodb"]:
