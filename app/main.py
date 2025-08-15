@@ -20,27 +20,114 @@ redis_client = None
 mongo_client = None
 mongo_db = None
 
+import re 
+
+def mongo_shell_to_json(s: str) -> str:
+    """
+    Convert common Mongo shell object/array syntax to strict JSON:
+      - Normalize single quotes → double quotes for strings
+      - Quote unquoted keys (including $operators)
+    Pragmatic, not a full JS parser — but robust for typical classroom inputs.
+    """
+    if not s:
+        return s
+    # single → double quotes for strings (handles escapes)
+    s = re.sub(r"'([^'\\]*(?:\\.[^'\\]*)*)'", r'"\1"', s)
+    # quote unquoted keys right after { or ,  (e.g., { key: ... } or , count: ... )
+    s = re.sub(r'([{,]\s*)([A-Za-z0-9_\$]+)\s*:', r'\1"\2":', s)
+    return s
+
+def split_top_level_json_args(s: str):
+    """
+    Split 'a, b, c' into ['a', 'b', 'c'] only on commas at top level
+    (ignores commas inside strings/braces/brackets/parentheses).
+    """
+    parts = []
+    buf = []
+    depth_obj = depth_arr = depth_paren = 0
+    in_str = False
+    quote = None
+    esc = False
+    for ch in s:
+        buf.append(ch)
+        if esc:
+            esc = False
+            continue
+        if ch == '\\':
+            esc = True
+            continue
+        if in_str:
+            if ch == quote:
+                in_str = False
+                quote = None
+            continue
+        if ch in ('"', "'"):
+            in_str = True
+            quote = ch
+            continue
+        if ch == '{': depth_obj += 1
+        elif ch == '}': depth_obj -= 1
+        elif ch == '[': depth_arr += 1
+        elif ch == ']': depth_arr -= 1
+        elif ch == '(': depth_paren += 1
+        elif ch == ')': depth_paren -= 1
+
+        if ch == ',' and depth_obj == depth_arr == depth_paren == 0:
+            parts.append(''.join(buf[:-1]).strip())
+            buf = []
+    tail = ''.join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+def parse_two_params(params_str: str):
+    """
+    Parse 0–2 JSON args for find/findOne → (filter_dict, projection_or_None)
+    Accepts shell-style and strict JSON.
+    """
+    if not params_str.strip():
+        return {}, None
+    parts = split_top_level_json_args(params_str)
+    if len(parts) == 1:
+        return json.loads(mongo_shell_to_json(parts[0])), None
+    if len(parts) == 2:
+        return (json.loads(mongo_shell_to_json(parts[0])),
+                json.loads(mongo_shell_to_json(parts[1])))
+    raise ValueError("At most two arguments supported (filter, projection)")
+
+
 def init_databases():
-    """Initialize database connections with retry logic"""
+    """Initialize database connections with retry logic and short timeouts"""
     global redis_client, mongo_client, mongo_db
     
-    # Initialize Redis
+    # Initialize Redis with shorter timeout
     try:
-        redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
+        redis_client = redis.Redis(
+            host="localhost", 
+            port=6379, 
+            decode_responses=True,
+            socket_connect_timeout=3,  # 3 second connection timeout
+            socket_timeout=3,          # 3 second socket timeout
+            retry_on_timeout=False     # Don't retry on timeout
+        )
+        # Test connection with timeout
         redis_client.ping()
         logger.info("Redis connection established")
     except Exception as e:
         logger.error(f"Redis connection failed: {e}")
         raise
     
-    # Initialize MongoDB with retry
+    # Initialize MongoDB with shorter timeouts
     try:
         mongo_client = pymongo.MongoClient(
             "mongodb://localhost:27017/",
-            serverSelectionTimeoutMS=5000,  # 5 second timeout
-            connectTimeoutMS=5000
+            serverSelectionTimeoutMS=3000,  # 3 second timeout (reduced from 5)
+            connectTimeoutMS=3000,          # 3 second timeout (reduced from 5)
+            socketTimeoutMS=3000,           # 3 second socket timeout
+            maxPoolSize=10,                 # Limit connection pool
+            waitQueueTimeoutMS=3000         # Queue timeout
         )
-        # Test the connection
+        # Test the connection with timeout
         mongo_client.admin.command('ping')
         mongo_db = mongo_client["student_db"]
         logger.info("MongoDB connection established")
@@ -76,25 +163,43 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint to verify database connections"""
+    """Health check endpoint to verify database connections with timeout"""
     health_status = {"redis": False, "mongodb": False}
     
     try:
+        # Use shorter timeout for health checks
         redis_client.ping()
         health_status["redis"] = True
     except Exception as e:
-        logger.error(f"Redis connection failed: {e}")
+        logger.error(f"Redis health check failed: {e}")
     
     try:
+        # MongoDB ping with timeout
         mongo_client.admin.command('ping')
         health_status["mongodb"] = True
     except Exception as e:
-        logger.error(f"MongoDB connection failed: {e}")
+        logger.error(f"MongoDB health check failed: {e}")
     
     return {
         "status": "healthy" if all(health_status.values()) else "degraded",
         "databases": health_status
     }
+
+def check_database_connections():
+    """Check if database connections are still valid, with timeout protection"""
+    try:
+        # Quick Redis check with timeout
+        redis_client.ping()
+    except Exception as e:
+        logger.error(f"Redis connection lost: {e}")
+        raise HTTPException(status_code=503, detail="Redis database unavailable")
+    
+    try:
+        # Quick MongoDB check with timeout
+        mongo_client.admin.command('ping')
+    except Exception as e:
+        logger.error(f"MongoDB connection lost: {e}")
+        raise HTTPException(status_code=503, detail="MongoDB database unavailable")
 
 def parse_redis_command(line: str) -> tuple:
     """Parse a Redis command line into command and arguments."""
@@ -107,28 +212,79 @@ def parse_redis_command(line: str) -> tuple:
 
 
 def parse_mongodb_command(line: str) -> tuple:
-    """Parse a MongoDB command line into collection and operation parameters."""
+    """Parse a MongoDB command line into (collection | None, base_operation, params_str, chained_methods)."""
     line = line.strip()
     if not line:
         raise ValueError("Empty command")
-    
-    # Handle different MongoDB command formats
-    if line.startswith("db."):
-        # Format: db.collection.operation(params)
-        # Remove 'db.' prefix
-        remaining = line[3:]  # Remove "db."
-        
-        # Find the first dot to separate collection from operation
-        dot_index = remaining.find('.')
-        if dot_index == -1:
-            raise ValueError("Invalid MongoDB command format - missing collection.operation")
-        
-        collection = remaining[:dot_index]
-        operation_with_params = remaining[dot_index + 1:]  # Everything after collection.
-        
-        return collection, operation_with_params
-    else:
+
+    if not line.startswith("db."):
         raise ValueError("MongoDB commands must start with 'db.'")
+
+    remaining = line[3:]  # strip "db."
+    # Case A: standard "collection.operation(...)"
+    dot_index = remaining.find('.')
+
+    # --- db-level operations like: db.createCollection("name", {...}) ---
+    if dot_index == -1:
+        # Expect format: <operation>(...)
+        if '(' not in remaining:
+            raise ValueError("Invalid MongoDB command format - missing parameters")
+        paren_index = remaining.find('(')
+        base_operation = remaining[:paren_index].strip()
+        params_end = remaining.find(')')
+        if params_end == -1:
+            raise ValueError("Missing closing parenthesis in operation")
+        params_str = remaining[paren_index + 1:params_end].strip()
+        chained_methods = []  # no chaining for db-level ops
+        # collection is None for db-level commands
+        return None, base_operation, params_str, chained_methods
+
+    # --- collection-level: collection.operation(...) ---
+    collection = remaining[:dot_index]
+    operation_part = remaining[dot_index + 1:].strip()
+
+    if '(' not in operation_part:
+        raise ValueError("Invalid MongoDB command format - missing parameters")
+
+    paren_index = operation_part.find('(')
+    base_operation = operation_part[:paren_index].strip()
+
+    params_end = operation_part.find(')')
+    if params_end == -1:
+        raise ValueError("Missing closing parenthesis in operation")
+    params_str = operation_part[paren_index + 1:params_end].strip()
+
+    # Parse chained methods after the first ')'
+    chained_part = operation_part[params_end + 1:].strip()
+    chained_methods = []
+    current_method = ""
+    open_parens = 0
+
+    i = 0
+    while i < len(chained_part):
+        ch = chained_part[i]
+        if ch == '(':
+            open_parens += 1
+        elif ch == ')':
+            open_parens -= 1
+            if open_parens == 0 and current_method:
+                current_method += ch
+                if current_method.startswith('.') and current_method.endswith(')'):
+                    chained_methods.append(current_method.strip())
+                current_method = ""
+        elif open_parens == 0 and ch == '.':
+            if current_method and current_method.startswith('.') and current_method.endswith(')'):
+                chained_methods.append(current_method.strip())
+            current_method = "."
+        else:
+            current_method += ch
+        i += 1
+
+    if current_method and current_method.startswith('.') and current_method.endswith(')'):
+        chained_methods.append(current_method.strip())
+
+    return collection, base_operation, params_str, chained_methods
+
 
 def safe_eval_mongodb_params(params_str: str):
     """Safely evaluate MongoDB parameters string to Python objects."""
@@ -157,7 +313,7 @@ def safe_eval_mongodb_params(params_str: str):
 
 def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
-    
+
     # SET command
     if command == "SET":
         if len(args) < 2:
@@ -189,7 +345,101 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if value is None:
             return f"Key '{key}' not found"
         return f"Value for key '{key}': '{value}'"
-    
+
+    # MSET command
+    elif command == "MSET":
+        if len(args) < 2 or len(args) % 2 != 0:
+            raise ValueError("MSET requires an even number of arguments (key1 value1 key2 value2 ...)")
+        
+        # Pair up keys and values
+        key_value_pairs = {args[i]: args[i + 1] for i in range(0, len(args), 2)}
+        try:
+            # Use mset to set all key-value pairs atomically
+            redis_client.mset(key_value_pairs)
+            # Return a confirmation message with all set pairs
+            set_pairs = ", ".join([f"{k}: {v}" for k, v in key_value_pairs.items()])
+            return f"Set multiple keys: {set_pairs}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute MSET: {str(e)}")
+
+    # MGET command
+    elif command == "MGET":
+        if not args:
+            raise ValueError("MGET requires at least one key argument")
+        
+        try:
+            # Retrieve values for all specified keys
+            values = redis_client.mget(args)
+            # Handle values as strings or None (no decoding needed)
+            result = [v if v is not None else None for v in values]
+            # Create a mapping of keys to values for the response
+            key_value_pairs = {key: value for key, value in zip(args, result)}
+            if all(v is None for v in result):
+                return f"No values found for keys: {', '.join(args)}"
+            return f"Retrieved values: {', '.join([f'{k}: {v}' if v is not None else f'{k}: <not found>' for k, v in key_value_pairs.items()])}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute MGET: {str(e)}")
+
+    # DBSIZE command
+    elif command == "DBSIZE":
+        if args:
+            raise ValueError("DBSIZE does not accept arguments")
+        
+        try:
+            # Get the number of keys in the current database
+            size = redis_client.dbsize()
+            return f"Number of keys in database: {size}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute DBSIZE: {str(e)}")
+
+    # SCAN command
+    elif command == "SCAN":
+        if len(args) < 1 or len(args) > 4:
+            raise ValueError("SCAN accepts 1 to 4 arguments: [cursor] [MATCH pattern] [COUNT number]")
+        cursor = 0
+        match_pattern = None
+        count = None
+        
+        try:
+            # Parse mandatory cursor
+            cursor = int(args[0]) if args[0].isdigit() else 0
+            
+            # Parse optional MATCH and COUNT
+            for i in range(1, len(args)):
+                arg = args[i].upper()
+                if arg.startswith("MATCH"):
+                    # Join remaining args after MATCH as the pattern
+                    match_args = args[i + 1:] if i + 1 < len(args) else []
+                    match_pattern = " ".join(match_args) if match_args else None
+                    if not match_pattern:
+                        raise ValueError("MATCH requires a pattern")
+                    break  # MATCH should be the last option if present
+                elif arg.startswith("COUNT"):
+                    # Extract number after COUNT
+                    count_parts = args[i].split(" ", 1)
+                    if len(count_parts) != 2 or not count_parts[1].isdigit():
+                        raise ValueError("COUNT requires a positive integer")
+                    count = int(count_parts[1])
+                    if count <= 0:
+                        raise ValueError("COUNT must be a positive integer")
+            
+            # Execute SCAN
+            if match_pattern and count:
+                cursor, keys = redis_client.scan(cursor, match=match_pattern, count=count)
+            elif match_pattern:
+                cursor, keys = redis_client.scan(cursor, match=match_pattern)
+            elif count:
+                cursor, keys = redis_client.scan(cursor, count=count)
+            else:
+                cursor, keys = redis_client.scan(cursor)
+            
+            # Keys are already strings due to decode_responses=True
+            return f"SCAN cursor: {cursor}, keys: {keys}"
+        except redis.RedisError as e:
+            raise ValueError(f"Failed to execute SCAN: {str(e)}")
+        except ValueError as e:
+            raise ValueError(f"Invalid SCAN cursor, MATCH pattern, or COUNT: {str(e)}")
+        
     # DEL command
     elif command == "DEL":
         if not args:
@@ -571,142 +821,154 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         raise ValueError(f"Unsupported Redis command: '{command}'")
 
 
-def execute_mongodb_command(collection_name: str, operation_params: str) -> str:
-    """Execute a MongoDB command and return the result as a string."""
-    
+
+def execute_mongodb_command(collection_name: str, base_operation: str, params_str: str, chained_methods: list) -> str:
+    """Execute a MongoDB command and return the result as a string, supporting shell-style JSON, multi-arg ops, and basic chaining."""
     try:
-        # Get the collection
-        collection = mongo_db[collection_name]
-        
-        # Parse the operation and parameters
-        operation_params = operation_params.strip()
-        
-        # Extract operation name and parameters
-        if "(" not in operation_params:
-            raise ValueError(f"Invalid operation format: {operation_params}")
-        
-        paren_index = operation_params.find("(")
-        operation_name = operation_params[:paren_index]
-        
-        # Extract parameters (everything between first '(' and last ')')
-        params_start = paren_index + 1
-        params_end = operation_params.rfind(")")
-        
-        if params_end == -1:
-            raise ValueError("Missing closing parenthesis in operation")
-        
-        params_str = operation_params[params_start:params_end]
-        
-        # Handle different operations
-        if operation_name == "insertOne":
+        # For db-level ops, collection_name can be None
+        collection = mongo_db[collection_name] if collection_name else None
+
+        # ---------- CREATE COLLECTION (db-level) ----------
+        if base_operation == "createCollection":
+            if not params_str.strip():
+                raise ValueError("createCollection requires a collection name parameter")
+
+            parts = split_top_level_json_args(params_str)
+            name = parts[0].strip()
+
+            # Unquote if quoted
+            if name.startswith('"') and name.endswith('"'):
+                name = json.loads(name)
+            elif name.startswith("'") and name.endswith("'"):
+                name = name[1:-1]
+
+            options = {}
+            if len(parts) > 1:
+                options = json.loads(mongo_shell_to_json(parts[1].strip()))
+
+            mongo_db.create_collection(name, **options)
+            return f"Collection '{name}' created"
+
+        # ---------- INSERT ----------
+        if base_operation == "insertOne":
             if not params_str.strip():
                 raise ValueError("insertOne requires a document parameter")
-            
-            # Parse the JSON document
-            try:
-                document = json.loads(params_str)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON document: {e}")
-            
+            document = json.loads(mongo_shell_to_json(params_str))
             result = collection.insert_one(document)
-            return f"Inserted document"
-        
-        elif operation_name == "insertMany":
+            return "Inserted document"
+
+        elif base_operation == "insertMany":
             if not params_str.strip():
                 raise ValueError("insertMany requires an array parameter")
-            
-            try:
-                documents = json.loads(params_str)
-                if not isinstance(documents, list):
-                    raise ValueError("insertMany requires an array of documents")
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON array: {e}")
-            
+            documents = json.loads(mongo_shell_to_json(params_str))
+            if not isinstance(documents, list):
+                raise ValueError("insertMany requires an array of documents")
             result = collection.insert_many(documents)
             return f"Inserted {len(result.inserted_ids)} documents"
-        
-        elif operation_name == "find":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            
-            results = list(collection.find(query, {"_id": 0}))
-            # Convert ObjectId to string for JSON serialization
+
+        # ---------- FIND ----------
+        elif base_operation == "find":
+            filter_q, projection = parse_two_params(params_str)
+            cursor = collection.find(filter_q, projection or {"_id": 0})
+
+            # Apply chained methods (basic support)
+            if chained_methods:
+                for method in chained_methods:
+                    method = method.strip()
+                    if method == ".count()":
+                        count = collection.count_documents(filter_q)
+                        return f"Document count for query {filter_q}: {count}"
+                    elif method.startswith(".limit(") and method.endswith(")"):
+                        n = method[len(".limit("):-1].strip()
+                        if not n.isdigit():
+                            raise ValueError("limit(n) requires an integer")
+                        cursor = cursor.limit(int(n))
+                    elif method.startswith(".skip(") and method.endswith(")"):
+                        n = method[len(".skip("):-1].strip()
+                        if not n.isdigit():
+                            raise ValueError("skip(n) requires an integer")
+                        cursor = cursor.skip(int(n))
+                    elif method.startswith(".sort(") and method.endswith(")"):
+                        body = method[len(".sort("):-1].strip()
+                        sort_spec = json.loads(mongo_shell_to_json(body))
+                        if not isinstance(sort_spec, dict) or len(sort_spec) != 1:
+                            raise ValueError("sort expects one field: {'field': 1|-1}")
+                        field, direction = next(iter(sort_spec.items()))
+                        cursor = cursor.sort(field, 1 if int(direction) >= 0 else -1)
+                    else:
+                        # ignore unknown chains
+                        pass
+
+            results = list(cursor)
             for doc in results:
                 if '_id' in doc:
                     doc['_id'] = str(doc['_id'])
-            
             return f"Found {len(results)} document(s): {results}"
-        
-        elif operation_name == "findOne":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            
-            result = collection.find_one(query, {"_id": 0})  
+
+        elif base_operation == "findOne":
+            filter_q, projection = parse_two_params(params_str)
+            result = collection.find_one(filter_q, projection or {"_id": 0})
             if result:
                 if '_id' in result:
                     result['_id'] = str(result['_id'])
                 return f"Found document: {result}"
-            else:
-                return "No document found"
-        
-        elif operation_name == "updateOne":
-            # For updateOne, we expect two JSON objects: filter and update
-            try:
-                # Split parameters - this is tricky with nested JSON
-                # For now, let's use a simple approach
-                params = eval(f"[{params_str}]")
-                if len(params) != 2:
-                    raise ValueError("updateOne requires filter and update parameters")
-            except Exception as e:
-                raise ValueError(f"Invalid updateOne parameters: {e}")
-            
-            result = collection.update_one(params[0], params[1])
-            return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
-        
-        elif operation_name == "deleteOne":
+            return "No document found"
+
+        # ---------- UPDATE ----------
+        elif base_operation == "updateOne":
             if not params_str.strip():
-                query = {}
-            else:
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            
-            result = collection.delete_one(query)
+                raise ValueError("updateOne requires filter and update parameters")
+            parts = split_top_level_json_args(params_str)
+            if len(parts) < 2:
+                raise ValueError("updateOne requires filter and update parameters")
+            filter_query = json.loads(mongo_shell_to_json(parts[0]))
+            update_data  = json.loads(mongo_shell_to_json(parts[1]))
+            options = json.loads(mongo_shell_to_json(parts[2])) if len(parts) >= 3 else {}
+            result = collection.update_one(filter_query, update_data, **options)
+            return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
+
+        # ---------- DELETE ----------
+        elif base_operation == "deleteOne":
+            q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
+            result = collection.delete_one(q)
             return f"Deleted {result.deleted_count} document(s)"
-        
-        elif operation_name == "countDocuments":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            
-            count = collection.count_documents(query)
+
+        elif base_operation == "deleteMany":
+            q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
+            result = collection.delete_many(q)
+            return f"Deleted {result.deleted_count} document(s)"
+
+        # ---------- COUNT ----------
+        elif base_operation == "countDocuments":
+            q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
+            count = collection.count_documents(q)
             return f"Document count: {count}"
-        
-        elif operation_name == "drop":
+
+        # ---------- AGGREGATE ----------
+        elif base_operation == "aggregate":
+            if not params_str.strip():
+                raise ValueError("aggregate requires a pipeline array parameter")
+            pipeline = json.loads(mongo_shell_to_json(params_str))
+            if not isinstance(pipeline, list):
+                raise ValueError("aggregate requires an array pipeline")
+            cursor = collection.aggregate(pipeline)
+            results = list(cursor)
+            for doc in results:
+                if '_id' in doc and isinstance(doc['_id'], ObjectId):
+                    doc['_id'] = str(doc['_id'])
+            return f"Aggregated {len(results)} document(s): {results}"
+
+        # ---------- DROP COLLECTION ----------
+        elif base_operation == "drop":
             collection.drop()
             return f"Collection '{collection_name}' dropped"
-        
+
         else:
-            raise ValueError(f"Unsupported MongoDB operation: {operation_name}")
-            
+            raise ValueError(f"Unsupported MongoDB operation: {base_operation}")
+
     except Exception as e:
-        # Re-raise with more context
         raise ValueError(f"MongoDB execution error: {str(e)}")
+
 
 
 def reset_mongodb():
@@ -719,11 +981,74 @@ def reset_mongodb():
         logger.error(f"Failed to reset MongoDB: {e}")
         raise
 
+def split_mongo_commands(src: str):
+    """Split MongoDB commands allowing multi-line input.
+    Ends a command when (), {}, [] are all balanced and we hit newline/semicolon."""
+    cmds = []
+    buf = []
+    depth_paren = depth_brace = depth_bracket = 0
+    in_str = False
+    quote = None
+    escape = False
+
+    for ch in src:
+        buf.append(ch)
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == '\\':
+            escape = True
+            continue
+
+        if in_str:
+            if ch == quote:
+                in_str = False
+                quote = None
+            continue
+
+        if ch in ("'", '"'):
+            in_str = True
+            quote = ch
+            continue
+
+        if ch == '(':
+            depth_paren += 1
+        elif ch == ')':
+            depth_paren -= 1
+        elif ch == '{':
+            depth_brace += 1
+        elif ch == '}':
+            depth_brace -= 1
+        elif ch == '[':
+            depth_bracket += 1
+        elif ch == ']':
+            depth_bracket -= 1
+
+        # If all balanced and newline/semicolon appears, end the command
+        if ch in ('\n', ';') and depth_paren == depth_brace == depth_bracket == 0:
+            chunk = ''.join(buf).strip().rstrip(';')
+            if chunk:
+                cmds.append(chunk)
+            buf = []
+
+    # last chunk
+    tail = ''.join(buf).strip().rstrip(';')
+    if tail:
+        cmds.append(tail)
+
+    return cmds
+
+
 @app.post("/api/v1/submit")
 def submit(submission: Submission, authorization: Optional[str] = Header(None)):
     # Check auth token
     if authorization != f"Bearer {EXPECTED_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Quick connection check with timeout protection
+    check_database_connections()
 
     database = submission.database.lower()
     if database not in ["redis", "mongodb"]:
@@ -732,7 +1057,12 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
     with execution_lock:
         try:
             output_lines = []
-            lines = submission.commands.strip().split("\n")
+            #lines = submission.commands.strip().split("\n")
+            if database == "mongodb":
+                lines = split_mongo_commands(submission.commands)
+            else:
+                lines = [ln for ln in submission.commands.strip().split("\n") if ln.strip()]
+
             
             for line in lines:
                 if not line.strip():
@@ -744,8 +1074,9 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
                     output_lines.append(result)
                 
                 elif database == "mongodb":
-                    collection, operation_params = parse_mongodb_command(line)
-                    result = execute_mongodb_command(collection, operation_params)
+                    collection, base_operation, params_str, chained_methods = parse_mongodb_command(line)
+                    logging.info(f"Parsed command: {line}, Result: (collection={collection}, base_operation={base_operation}, params_str={params_str}, chained_methods={chained_methods})")
+                    result = execute_mongodb_command(collection, base_operation, params_str, chained_methods)
                     output_lines.append(result)
 
             # Reset database after processing
