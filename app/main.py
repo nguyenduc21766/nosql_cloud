@@ -861,6 +861,66 @@ def reset_mongodb():
         logger.error(f"Failed to reset MongoDB: {e}")
         raise
 
+def split_mongo_commands(src: str):
+    """Split MongoDB commands allowing multi-line input.
+    Ends a command when (), {}, [] are all balanced and we hit newline/semicolon."""
+    cmds = []
+    buf = []
+    depth_paren = depth_brace = depth_bracket = 0
+    in_str = False
+    quote = None
+    escape = False
+
+    for ch in src:
+        buf.append(ch)
+
+        if escape:
+            escape = False
+            continue
+
+        if ch == '\\':
+            escape = True
+            continue
+
+        if in_str:
+            if ch == quote:
+                in_str = False
+                quote = None
+            continue
+
+        if ch in ("'", '"'):
+            in_str = True
+            quote = ch
+            continue
+
+        if ch == '(':
+            depth_paren += 1
+        elif ch == ')':
+            depth_paren -= 1
+        elif ch == '{':
+            depth_brace += 1
+        elif ch == '}':
+            depth_brace -= 1
+        elif ch == '[':
+            depth_bracket += 1
+        elif ch == ']':
+            depth_bracket -= 1
+
+        # If all balanced and newline/semicolon appears, end the command
+        if ch in ('\n', ';') and depth_paren == depth_brace == depth_bracket == 0:
+            chunk = ''.join(buf).strip().rstrip(';')
+            if chunk:
+                cmds.append(chunk)
+            buf = []
+
+    # last chunk
+    tail = ''.join(buf).strip().rstrip(';')
+    if tail:
+        cmds.append(tail)
+
+    return cmds
+
+
 @app.post("/api/v1/submit")
 def submit(submission: Submission, authorization: Optional[str] = Header(None)):
     # Check auth token
@@ -877,7 +937,12 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
     with execution_lock:
         try:
             output_lines = []
-            lines = submission.commands.strip().split("\n")
+            #lines = submission.commands.strip().split("\n")
+            if database == "mongodb":
+                lines = split_mongo_commands(submission.commands)
+            else:
+                lines = [ln for ln in submission.commands.strip().split("\n") if ln.strip()]
+
             
             for line in lines:
                 if not line.strip():
