@@ -20,6 +20,82 @@ redis_client = None
 mongo_client = None
 mongo_db = None
 
+import re 
+
+def mongo_shell_to_json(s: str) -> str:
+    """
+    Convert common Mongo shell object/array syntax to strict JSON:
+      - Normalize single quotes → double quotes for strings
+      - Quote unquoted keys (including $operators)
+    Pragmatic, not a full JS parser — but robust for typical classroom inputs.
+    """
+    if not s:
+        return s
+    # single → double quotes for strings (handles escapes)
+    s = re.sub(r"'([^'\\]*(?:\\.[^'\\]*)*)'", r'"\1"', s)
+    # quote unquoted keys right after { or ,  (e.g., { key: ... } or , count: ... )
+    s = re.sub(r'([{,]\s*)([A-Za-z0-9_\$]+)\s*:', r'\1"\2":', s)
+    return s
+
+def split_top_level_json_args(s: str):
+    """
+    Split 'a, b, c' into ['a', 'b', 'c'] only on commas at top level
+    (ignores commas inside strings/braces/brackets/parentheses).
+    """
+    parts = []
+    buf = []
+    depth_obj = depth_arr = depth_paren = 0
+    in_str = False
+    quote = None
+    esc = False
+    for ch in s:
+        buf.append(ch)
+        if esc:
+            esc = False
+            continue
+        if ch == '\\':
+            esc = True
+            continue
+        if in_str:
+            if ch == quote:
+                in_str = False
+                quote = None
+            continue
+        if ch in ('"', "'"):
+            in_str = True
+            quote = ch
+            continue
+        if ch == '{': depth_obj += 1
+        elif ch == '}': depth_obj -= 1
+        elif ch == '[': depth_arr += 1
+        elif ch == ']': depth_arr -= 1
+        elif ch == '(': depth_paren += 1
+        elif ch == ')': depth_paren -= 1
+
+        if ch == ',' and depth_obj == depth_arr == depth_paren == 0:
+            parts.append(''.join(buf[:-1]).strip())
+            buf = []
+    tail = ''.join(buf).strip()
+    if tail:
+        parts.append(tail)
+    return parts
+
+def parse_two_params(params_str: str):
+    """
+    Parse 0–2 JSON args for find/findOne → (filter_dict, projection_or_None)
+    Accepts shell-style and strict JSON.
+    """
+    if not params_str.strip():
+        return {}, None
+    parts = split_top_level_json_args(params_str)
+    if len(parts) == 1:
+        return json.loads(mongo_shell_to_json(parts[0])), None
+    if len(parts) == 2:
+        return (json.loads(mongo_shell_to_json(parts[0])),
+                json.loads(mongo_shell_to_json(parts[1])))
+    raise ValueError("At most two arguments supported (filter, projection)")
+
+
 def init_databases():
     """Initialize database connections with retry logic and short timeouts"""
     global redis_client, mongo_client, mongo_db
@@ -734,90 +810,102 @@ def execute_redis_command(command: str, args: List[str]) -> str:
 
 
 def execute_mongodb_command(collection_name: str, base_operation: str, params_str: str, chained_methods: list) -> str:
-    """Execute a MongoDB command and return the result as a string, supporting chained methods."""
-
+    """Execute a MongoDB command and return the result as a string, supporting shell-style JSON, multi-arg ops, and basic chaining."""
     try:
-        # Get the collection
         collection = mongo_db[collection_name]
 
-        # Parse parameters
-        if params_str.strip():
-            try:
-                query = json.loads(params_str)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid query JSON: {e}")
-        else:
-            query = {}
-
-        # Execute base operation
+        # ---------- INSERT ----------
         if base_operation == "insertOne":
             if not params_str.strip():
                 raise ValueError("insertOne requires a document parameter")
-            try:
-                document = json.loads(params_str)
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON document: {e}")
+            document = json.loads(mongo_shell_to_json(params_str))
             result = collection.insert_one(document)
-            return f"Inserted document"
+            return "Inserted document"
 
         elif base_operation == "insertMany":
             if not params_str.strip():
                 raise ValueError("insertMany requires an array parameter")
-            try:
-                documents = json.loads(params_str)
-                if not isinstance(documents, list):
-                    raise ValueError("insertMany requires an array of documents")
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON array: {e}")
+            documents = json.loads(mongo_shell_to_json(params_str))
+            if not isinstance(documents, list):
+                raise ValueError("insertMany requires an array of documents")
             result = collection.insert_many(documents)
             return f"Inserted {len(result.inserted_ids)} documents"
 
+        # ---------- FIND ----------
         elif base_operation == "find":
-            cursor = collection.find(query, {"_id": 0})
+            filter_q, projection = parse_two_params(params_str)
+            cursor = collection.find(filter_q, projection or {"_id": 0})
+
+            # Apply chained methods (basic support)
+            if chained_methods:
+                for method in chained_methods:
+                    method = method.strip()
+                    if method == ".count()":
+                        # countDocuments is semantically closer to find().count()
+                        count = collection.count_documents(filter_q)
+                        return f"Document count for query {filter_q}: {count}"
+                    elif method.startswith(".limit(") and method.endswith(")"):
+                        n = method[len(".limit("):-1].strip()
+                        if not n.isdigit():
+                            raise ValueError("limit(n) requires an integer")
+                        cursor = cursor.limit(int(n))
+                    elif method.startswith(".skip(") and method.endswith(")"):
+                        n = method[len(".skip("):-1].strip()
+                        if not n.isdigit():
+                            raise ValueError("skip(n) requires an integer")
+                        cursor = cursor.skip(int(n))
+                    elif method.startswith(".sort(") and method.endswith(")"):
+                        body = method[len(".sort("):-1].strip()
+                        sort_spec = json.loads(mongo_shell_to_json(body))
+                        if not isinstance(sort_spec, dict) or len(sort_spec) != 1:
+                            raise ValueError("sort expects one field: {'field': 1|-1}")
+                        field, direction = next(iter(sort_spec.items()))
+                        cursor = cursor.sort(field, 1 if int(direction) >= 0 else -1)
+                    else:
+                        # Ignore unknown chains silently or raise — choose your policy
+                        pass
+
+            results = list(cursor)
+            for doc in results:
+                if '_id' in doc:
+                    doc['_id'] = str(doc['_id'])
+            return f"Found {len(results)} document(s): {results}"
+
         elif base_operation == "findOne":
-            result = collection.find_one(query, {"_id": 0})
+            filter_q, projection = parse_two_params(params_str)
+            result = collection.find_one(filter_q, projection or {"_id": 0})
             if result:
                 if '_id' in result:
                     result['_id'] = str(result['_id'])
                 return f"Found document: {result}"
             return "No document found"
 
+        # ---------- UPDATE ----------
         elif base_operation == "updateOne":
             if not params_str.strip():
                 raise ValueError("updateOne requires filter and update parameters")
-            try:
-                parts = [p.strip() for p in params_str.split(',')]
-                if len(parts) != 2:
-                    raise ValueError("updateOne requires filter and update parameters")
-                filter_query = json.loads(parts[0])
-                update_data = json.loads(parts[1])
-            except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid updateOne parameters: {e}")
-            result = collection.update_one(filter_query, update_data)
+            parts = split_top_level_json_args(params_str)
+            if len(parts) < 2:
+                raise ValueError("updateOne requires filter and update parameters")
+            filter_query = json.loads(mongo_shell_to_json(parts[0]))
+            update_data  = json.loads(mongo_shell_to_json(parts[1]))
+            options = json.loads(mongo_shell_to_json(parts[2])) if len(parts) >= 3 else {}
+            result = collection.update_one(filter_query, update_data, **options)
             return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
 
+        # ---------- DELETE ----------
         elif base_operation == "deleteOne":
-            if not params_str.strip():
-                query = {}
-            else:
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            result = collection.delete_one(query)
+            q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
+            result = collection.delete_one(q)
             return f"Deleted {result.deleted_count} document(s)"
 
+        # ---------- COUNT ----------
         elif base_operation == "countDocuments":
-            if params_str.strip():
-                try:
-                    query = json.loads(params_str)
-                except json.JSONDecodeError as e:
-                    raise ValueError(f"Invalid query JSON: {e}")
-            else:
-                query = {}
-            count = collection.count_documents(query)
+            q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
+            count = collection.count_documents(q)
             return f"Document count: {count}"
 
+        # ---------- DROP ----------
         elif base_operation == "drop":
             collection.drop()
             return f"Collection '{collection_name}' dropped"
@@ -825,31 +913,10 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         else:
             raise ValueError(f"Unsupported MongoDB operation: {base_operation}")
 
-        # Check for unsupported chaining
-        if chained_methods and base_operation != "find":
-            raise ValueError(f"Chained methods are only supported with 'find' operation")
-
-        # Apply chained methods for find operations
-        if base_operation == "find":
-            logging.info(f"Chained methods: {chained_methods}")
-            if chained_methods:
-                method = chained_methods[0]
-                logging.info(f"Processing method: {method}")
-                if method == ".count()":
-                    count = collection.count_documents(query)
-                    return f"Document count for query {query}: {count}"
-                elif method == ".sort()":
-                    cursor = cursor.sort("_id", 1)
-                else:
-                    logging.warning(f"Ignoring unsupported chained method: {method}")
-            results = list(cursor)
-            for doc in results:
-                if '_id' in doc:
-                    doc['_id'] = str(doc['_id'])
-            return f"Found {len(results)} document(s): {results}"
-
     except Exception as e:
+        # keep your existing error surfacing pattern
         raise ValueError(f"MongoDB execution error: {str(e)}")
+
 
 def reset_mongodb():
     """Reset MongoDB database by dropping all collections."""
