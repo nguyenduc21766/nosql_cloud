@@ -9,7 +9,7 @@ It is designed for **learning and development purposes** — not for production.
 
 ## ⚡ Quickstart
 
-```bash
+
 git clone <your-repo-url>
 cd nosql_cloud
 ./build && ./run
