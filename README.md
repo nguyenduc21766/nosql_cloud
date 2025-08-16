@@ -1,4 +1,3 @@
----
 
 # NoSQL Cloud API with FastAPI, Redis, and MongoDB (Ubuntu 24.04)
 
@@ -14,7 +13,6 @@ It is designed for **learning and development purposes** — not for production.
 git clone <your-repo-url>
 cd nosql_cloud
 ./build && ./run
-```
 
 Access services:
 
@@ -22,38 +20,7 @@ Access services:
 * 🍃 MongoDB → mongodb://localhost:27017
 * 🧠 Redis → redis\://localhost:6379
 
----
-
-
-📖 Supported Commands
-
-**MongoDB**
-
-* Insert: insertOne, insertMany
-
-* Find: find, findOne with .limit(), .skip(), .sort(), .count()
-
-* Update: updateOne, updateMany
-
-* Delete: deleteOne, deleteMany
-
-* Aggregate: aggregate([{...}, {...}])
-
-* Utility: countDocuments, drop, createCollection
-
-**Redis**
-
-* Keys: SET, GET, DEL, EXISTS, TTL, KEYS
-
-* Lists: LPUSH, RPUSH, LPOP, RPOP, LRANGE, LINDEX, LINSERT
-
-* Hashes: HSET, HGET, HDEL
-
-* Sets: SADD, SREM, SCARD
-
-* Sorted Sets: ZADD, ZREM, ZINCRBY
-
-⚠️ Any other commands may not be supported.
+⚠️ For MongoDB, always use **double quotes (`"`)** in JSON documents.
 
 ---
 
@@ -66,16 +33,56 @@ Access services:
 
 ---
 
+## 📖 Supported Commands
+
+**MongoDB**
+
+* Insert: `insertOne`, `insertMany`
+* Find: `find`, `findOne` with `.limit()`, `.skip()`, `.sort()`, `.count()`
+* Update: `updateOne`, `updateMany`
+* Delete: `deleteOne`, `deleteMany`
+* Aggregate: `aggregate([{...}, {...}])`
+* Utility: `countDocuments`, `drop`, `createCollection`
+
+**Redis**
+
+* Keys: `SET`, `GET`, `DEL`, `EXISTS`, `TTL`, `KEYS`
+* Lists: `LPUSH`, `RPUSH`, `LPOP`, `RPOP`, `LRANGE`, `LINDEX`, `LINSERT`
+* Hashes: `HSET`, `HGET`, `HDEL`
+* Sets: `SADD`, `SREM`, `SCARD`
+* Sorted Sets: `ZADD`, `ZREM`, `ZINCRBY`
+
+⚠️ Any other commands may not be supported.
+For examples, see [`/app/help.txt`](./help.txt).
+
+---
+
 ## 🔑 Authentication
 
-The API requires a **Bearer token** in requests.
+The API requires a **Bearer token** for all requests.
+
 Default token:
 
 ```python
 TOKEN = "supersecretkey"
 ```
 
-You can change this in `/app/config.py`.
+Set it as an environment variable:
+
+```bash
+export TOKEN=supersecretkey
+```
+
+Example usage:
+
+```bash
+curl -X POST http://localhost:80/api/v1/submit \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"database":"redis","commands":"PING"}'
+```
+
+You can change the token in `/app/config.py`.
 
 ---
 
@@ -109,16 +116,11 @@ This starts:
 
 ### MongoDB Query
 
-Request:
-
 ```bash
 curl -X POST http://localhost:80/api/v1/submit \
-  -H "Authorization: Bearer supersecretkey" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-        "database": "mongodb",
-        "commands": "db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"
-      }'
+  -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
 ```
 
 Response:
@@ -130,29 +132,13 @@ Response:
 }
 ```
 
----
-
 ### Redis Query
-
-Request:
 
 ```bash
 curl -X POST http://localhost:80/api/v1/submit \
-  -H "Authorization: Bearer supersecretkey" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{
-        "database": "redis",
-        "commands": "SET key1 \"hello\"\nGET key1"
-      }'
-```
-
-Response:
-
-```json
-{
-  "success": true,
-  "output": "OK\nValue for key key1: hello"
-}
+  -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
 ```
 
 ---
@@ -166,7 +152,7 @@ db.users.find({})
 EOF
 
 curl -X POST http://localhost:80/api/v1/submit \
-  -H "Authorization: Bearer supersecretkey" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"database":"mongodb","commands":"'"$(cat mongo_cmds.txt)"'"}'
 ```
@@ -175,17 +161,15 @@ curl -X POST http://localhost:80/api/v1/submit \
 
 ## 🐚 Accessing the Container
 
-Enter shell:
-
 ```bash
 docker exec -it nosql-docker /bin/bash
 ```
 
-Inside container you can run:
+Inside container:
 
-* `redis-cli` for Redis
-* `mongosh` for MongoDB
-* `systemctl status` to inspect services
+* `redis-cli` → Redis shell
+* `mongosh` → MongoDB shell
+* Logs & code → `/app`
 
 ---
 
@@ -203,7 +187,7 @@ Inside container you can run:
 ```
         +-------------+
         |   FastAPI   |  <-- REST API (port 80)
-        +------+------+
+        +------+------+ 
                |
    +-----------+-----------+
    |                       |
@@ -220,6 +204,7 @@ Inside container you can run:
 
 ```bash
 systemctl status fastapi.service
+journalctl -u fastapi.service --no-pager
 ```
 
 ### MongoDB / Redis ports busy
@@ -231,14 +216,16 @@ sudo systemctl stop mongod
 sudo systemctl stop redis-server
 ```
 
+### Firewall
+
+Make sure ports **80, 27017, 6379** are open (Azure NSG / firewall).
+
 ### Common errors
 
 * **`MongoDB execution error: Missing closing parenthesis`**
-  → Check that your query uses valid JSON-like syntax.
+  → Ensure valid JSON (double quotes only).
 * **`Redis command not found`**
   → Use uppercase (`SET`, `GET`, `DEL`).
 
 ---
-
-
 
