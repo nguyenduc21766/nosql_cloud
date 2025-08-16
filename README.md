@@ -1,59 +1,70 @@
-
-
 ---
 
 # NoSQL Cloud API with FastAPI, Redis, and MongoDB (Ubuntu 24.04)
 
-This project provides a containerized development environment for interacting with NoSQL databases (MongoDB and Redis) through a unified REST API using FastAPI.
+This project provides a containerized development environment for interacting with **MongoDB** and **Redis** through a unified **REST API** powered by **FastAPI**.
 
-The container is based on **Ubuntu 24.04**, includes **MongoDB 7.0.5**, **Redis 7.0.15**, and exposes a **FastAPI** service for evaluating database commands via HTTP requests.
+It is designed for **learning and development purposes** — not for production.
 
-> ⚠️ This project is intended for development and educational purposes only — not for production deployment.
+---
+
+## ⚡ Quickstart
+
+```bash
+git clone <your-repo-url>
+cd nosql_cloud
+./build && ./run
+```
+
+Access services:
+
+* 🌐 FastAPI → [http://localhost:80](http://localhost:80)
+* 🍃 MongoDB → mongodb://localhost:27017
+* 🧠 Redis → redis\://localhost:6379
 
 ---
 
 ## 🚀 Features
 
-* 🔧 Run MongoDB and Redis services inside a single container
-* 📡 Use FastAPI to submit NoSQL commands (Mongo shell or Redis CLI style)
-* 🧪 Test endpoints using `curl` or any HTTP client
-* 🐳 Systemd-compatible container structure (init-based)
+* 🔧 MongoDB 7.0.5 & Redis 7.0.15 in one container
+* 📡 Unified REST API with FastAPI
+* 🧪 Run Mongo shell & Redis CLI–style commands over HTTP
+* 🐳 Systemd-compatible container (init-based)
 
 ---
 
-## 🧱 Prerequisites
+## 🔑 Authentication
 
-* [Docker](https://www.docker.com/products/docker-desktop/) must be installed
-* Port 80 (FastAPI), 27017 (MongoDB), and 6379 (Redis) must be **free** on your system
+The API requires a **Bearer token** in requests.
+Default token:
+
+```python
+TOKEN = "supersecretkey"
+```
+
+You can change this in `/app/config.py`.
 
 ---
 
 ## 🛠️ Setup Instructions
 
-### 1. Clone the Repository
-
-```bash
-git clone <your-repo-url>
-cd nosql_cloud
-```
-
-### 2. Build the Docker Image
+### 1. Build the Docker Image
 
 ```bash
 chmod +x build
 ./build
 ```
 
-> This will delete any existing image or container named `nosql-docker` and build everything from scratch.
+> This removes any existing `nosql-docker` container/image and rebuilds from scratch.
 
-### 3. Run the Container
+### 2. Run the Container
 
 ```bash
 chmod +x run
 ./run
 ```
 
-This starts a new container and launches:
+This starts:
 
 * 🌐 FastAPI at `http://localhost:80/`
 * 🍃 MongoDB at `localhost:27017`
@@ -63,71 +74,138 @@ This starts a new container and launches:
 
 ## 🧪 Example API Usage
 
-### MongoDB Query (via REST)
+### MongoDB Query
+
+Request:
 
 ```bash
 curl -X POST http://localhost:80/api/v1/submit \
   -H "Authorization: Bearer supersecretkey" \
   -H "Content-Type: application/json" \
   -d '{
-        "database":"mongodb",
-        "commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"
+        "database": "mongodb",
+        "commands": "db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"
       }'
 ```
 
-### Redis Query (via REST)
+Response:
+
+```json
+{
+  "success": true,
+  "output": "Inserted document\nFound 1 document(s): [{\"name\": \"Ann\"}]"
+}
+```
+
+---
+
+### Redis Query
+
+Request:
 
 ```bash
 curl -X POST http://localhost:80/api/v1/submit \
   -H "Authorization: Bearer supersecretkey" \
   -H "Content-Type: application/json" \
   -d '{
-        "database":"redis",
-        "commands":"SET key1 \"hello\"\nGET key1"
+        "database": "redis",
+        "commands": "SET key1 \"hello\"\nGET key1"
       }'
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "output": "OK\nValue for key key1: hello"
+}
+```
+
+---
+
+### Run Commands from File
+
+```bash
+cat <<EOF > mongo_cmds.txt
+db.users.insertOne({"name":"Alice"})
+db.users.find({})
+EOF
+
+curl -X POST http://localhost:80/api/v1/submit \
+  -H "Authorization: Bearer supersecretkey" \
+  -H "Content-Type: application/json" \
+  -d '{"database":"mongodb","commands":"'"$(cat mongo_cmds.txt)"'"}'
 ```
 
 ---
 
 ## 🐚 Accessing the Container
 
-To manually enter the container shell:
+Enter shell:
 
 ```bash
 docker exec -it nosql-docker /bin/bash
 ```
 
-From here, you can run:
+Inside container you can run:
 
 * `redis-cli` for Redis
-* `mongosh` or `mongo` for MongoDB
+* `mongosh` for MongoDB
 * `systemctl status` to inspect services
 
 ---
 
-## 📂 Help File
+## 📂 File Locations
 
-Once inside the container, you can check `/app/help.txt` for a concise guide on using the API and databases.
+* FastAPI app → `/app/main.py`
+* MongoDB handler → `/app/main.py`
+* Redis handler → `/app/main.py`
+* Help file → `/app/help.txt`
+
+---
+
+## 🖼️ Architecture
+
+```
+        +-------------+
+        |   FastAPI   |  <-- REST API (port 80)
+        +------+------+
+               |
+   +-----------+-----------+
+   |                       |
++--v---+             +-----v--+
+|MongoDB|:27017      | Redis  |:6379
++-------+            +--------+
+```
 
 ---
 
 ## 🔧 Troubleshooting
 
-* If FastAPI is not reachable, check:
+### FastAPI not reachable
 
-  ```bash
-  systemctl status fastapi.service
-  ```
-* If ports are busy, stop host services:
+```bash
+systemctl status fastapi.service
+```
 
-  ```bash
-  sudo systemctl stop mongod
-  sudo systemctl stop redis-server
-  ```
+### MongoDB / Redis ports busy
+
+Stop local services:
+
+```bash
+sudo systemctl stop mongod
+sudo systemctl stop redis-server
+```
+
+### Common errors
+
+* **`MongoDB execution error: Missing closing parenthesis`**
+  → Check that your query uses valid JSON-like syntax.
+* **`Redis command not found`**
+  → Use uppercase (`SET`, `GET`, `DEL`).
 
 ---
 
-## 📌 Notes
 
-* The container uses `systemd` to manage services.
-* Source files for the FastAPI app are stored in `/app`.
+
