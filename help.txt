@@ -1,42 +1,156 @@
-Step to use api server with Docker container connected
-## 2. Using the Server Once Connected
-2.1. Navigate to the project directory:
-    ```bash
-    cd ~/nosql_cloud
-    ```
+````text
+# NoSQL Cloud API - Quick Reference
 
-## 3. Build the Docker Image
-3.1. Run the provided `build` script (this wipes and rebuilds the image):
-    ```bash
-    ./build
-    ```
+This file provides step-by-step instructions and examples for using the API server
+inside the Docker container.
 
-## 4. Run the Docker Container
-4.1. Execute the `run` script:
-    ```bash
-    ./run
-    ```
-4.2. This starts the container and binds:
-    - FastAPI at: `http://localhost:80/`
-    - MongoDB at: `localhost:27017`
-    - Redis at: `localhost:6379`
+---
 
-## 5. Enter the Container (Optional)
-5.1. To inspect inside the container:
-    ```bash
-    docker exec -it nosql-docker /bin/bash
-    ```
+## 1. Navigate to Project Directory
+```bash
+cd ~/nosql_cloud
+````
 
-## 6. Test FastAPI Endpoint
-6.1. Example MongoDB POST request:
-    ```bash
-    curl -X POST http://68.219.210.74:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
-    ```
-6.2. Example Redis POST request:
-    ```bash
-    curl -X POST http://68.219.210.74:80/api/v1/submit         -H "Authorization: Bearer supersecretkey"         -H "Content-Type: application/json"         -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
-    ```
+---
 
-## Notes
-- If you get port conflict errors, ensure no host Redis/Mongo is running: `sudo systemctl stop redis-server mongod`
-- Make sure port 80, 6379, and 27017 are open in Azure NSG/firewall settings.
+## 2. Build the Docker Image
+
+Rebuilds the image (⚠️ wipes old one):
+
+```bash
+./build
+```
+
+---
+
+## 3. Run the Docker Container
+
+Starts container and services:
+
+```bash
+./run
+```
+
+Services available:
+
+* FastAPI:  [http://localhost:80/](http://localhost:80/)
+* MongoDB:  localhost:27017
+* Redis:    localhost:6379
+
+---
+
+## 4. Enter the Container (Optional)
+
+Inspect inside:
+
+```bash
+docker exec -it nosql-docker /bin/bash
+```
+
+Inside you can run:
+
+* `mongosh` → MongoDB shell
+* `redis-cli` → Redis CLI
+* Logs & code → `/app`
+
+---
+
+## 5. Test API Endpoint
+
+### MongoDB Example
+
+```bash
+curl -X POST http://localhost:80/api/v1/submit \
+  -H "Authorization: Bearer supersecretkey" \
+  -H "Content-Type: application/json" \
+  -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
+```
+
+### Redis Example
+
+```bash
+curl -X POST http://localhost:80/api/v1/submit \
+  -H "Authorization: Bearer supersecretkey" \
+  -H "Content-Type: application/json" \
+  -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
+```
+
+---
+
+## 6. MongoDB Command Examples
+
+### Insert Many
+
+```js
+db.users.insertMany([
+  { "name": "Alice", "age": 25 },
+  { "name": "Bob",   "age": 30 }
+])
+```
+
+### Update Many
+
+```js
+db.users.updateMany(
+  { "age": { "$gt": 20 } },
+  { "$inc": { "age": 1 } }
+)
+```
+
+### Delete Many
+
+```js
+db.users.deleteMany({ "age": { "$lt": 18 } })
+```
+
+### Aggregate
+
+```js
+db.orders.aggregate([
+  { "$match": { "status": "A" } },
+  { "$group": { "_id": "$cust_id", "total": { "$sum": "$amount" } } }
+])
+```
+
+---
+
+## 7. Redis Command Examples
+
+```bash
+SET user:1 "Alice"
+GET user:1
+DEL user:1
+
+LPUSH mylist "a" "b" "c"
+LRANGE mylist 0 -1
+
+HSET user:1 name "Alice" age "25"
+HGET user:1 name
+
+SADD tags "red" "blue"
+SCARD tags
+
+ZADD scores 100 "Alice" 200 "Bob"
+ZINCRBY scores 50 "Alice"
+```
+
+---
+
+## 8. Troubleshooting
+
+* **Port conflicts** → stop host DBs:
+
+  ```bash
+  sudo systemctl stop mongod redis-server
+  ```
+* **FastAPI not reachable**:
+
+  ```bash
+  systemctl status fastapi.service
+  ```
+* **Firewall** → open ports 80, 27017, 6379 (e.g., Azure NSG)
+* **Invalid JSON errors** → always use **double quotes** (`"`) inside MongoDB documents.
+
+---
+
+
