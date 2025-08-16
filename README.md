@@ -82,7 +82,7 @@ curl -X POST http://localhost:80/api/v1/submit \
   -d '{"database":"redis","commands":"PING"}'
 ```
 
-You can change the token in `/app/config.py`.
+You can change the token in `/app/main.py`.
 
 ---
 
@@ -204,7 +204,7 @@ Inside container:
 
 ```bash
 systemctl status fastapi.service
-journalctl -u fastapi.service --no-pager
+
 ```
 
 ### MongoDB / Redis ports busy
