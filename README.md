@@ -26,7 +26,8 @@ Access services:
 
 
 📖 Supported Commands
-MongoDB
+
+**MongoDB**
 
 * Insert: insertOne, insertMany
 
@@ -40,7 +41,7 @@ MongoDB
 
 * Utility: countDocuments, drop, createCollection
 
-Redis
+**Redis**
 
 * Keys: SET, GET, DEL, EXISTS, TTL, KEYS
 
