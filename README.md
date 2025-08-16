@@ -24,6 +24,39 @@ Access services:
 
 ---
 
+6379
+
+📖 Supported Commands
+MongoDB
+
+Insert: insertOne, insertMany
+
+Find: find, findOne with .limit(), .skip(), .sort(), .count()
+
+Update: updateOne, updateMany
+
+Delete: deleteOne, deleteMany
+
+Aggregate: aggregate([{...}, {...}])
+
+Utility: countDocuments, drop, createCollection
+
+Redis
+
+Keys: SET, GET, DEL, EXISTS, TTL, KEYS
+
+Lists: LPUSH, RPUSH, LPOP, RPOP, LRANGE, LINDEX, LINSERT
+
+Hashes: HSET, HGET, HDEL
+
+Sets: SADD, SREM, SCARD
+
+Sorted Sets: ZADD, ZREM, ZINCRBY
+
+⚠️ Any other commands may not be supported.
+
+---
+
 ## 🚀 Features
 
 * 🔧 MongoDB 7.0.5 & Redis 7.0.15 in one container
