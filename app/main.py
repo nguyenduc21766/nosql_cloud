@@ -927,6 +927,22 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             result = collection.update_one(filter_query, update_data, **options)
             return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
 
+                # ---------- UPDATE MANY ----------
+        elif base_operation == "updateMany":
+            if not params_str.strip():
+                raise ValueError("updateMany requires filter and update parameters")
+            parts = split_top_level_json_args(params_str)
+            if len(parts) < 2:
+                raise ValueError("updateMany requires filter and update parameters")
+
+            filter_query = json.loads(mongo_shell_to_json(parts[0]))
+            update_data  = json.loads(mongo_shell_to_json(parts[1]))
+            options = json.loads(mongo_shell_to_json(parts[2])) if len(parts) >= 3 else {}
+
+            result = collection.update_many(filter_query, update_data, **options)
+            return f"Matched {result.matched_count} document(s), modified {result.modified_count}"
+
+
         # ---------- DELETE ----------
         elif base_operation == "deleteOne":
             q = json.loads(mongo_shell_to_json(params_str)) if params_str.strip() else {}
