@@ -53,7 +53,7 @@ Access services:
 * Sorted Sets: `ZADD`, `ZREM`, `ZINCRBY`
 
 ⚠️ Any other commands may not be supported.
-For examples, see [`/app/help.txt`](./help.txt).
+For examples, see [`./help.txt`](./help.txt).
 
 ---
 
