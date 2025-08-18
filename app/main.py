@@ -216,7 +216,7 @@ def parse_mongodb_command(line: str) -> tuple:
     line = line.strip()
     if not line:
         raise ValueError("Empty command")
-
+'''
 
     # ---- SPECIAL SHELL KEYWORDS (no 'db.' prefix) ----
     low = line.lower()
@@ -235,7 +235,7 @@ def parse_mongodb_command(line: str) -> tuple:
         if not dbname:
             raise ValueError("use requires a database name")
         return None, "use_db", dbname, []
-
+'''
     if not line.startswith("db."):
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -848,8 +848,8 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         collection = mongo_db[collection_name] if collection_name else None
 
 
-
-                # ---------- SPECIAL SHELL KEYWORDS ----------
+'''
+        # ---------- SPECIAL SHELL KEYWORDS ----------
         if base_operation == "show_dbs":
             dbs = mongo_client.list_database_names()
             return f"Databases: {dbs}"
@@ -880,7 +880,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         if base_operation == "getCollectionNames" and collection_name is None:
             colls = mongo_db.list_collection_names()
             return f"Collections: {colls}"
-
+'''
         # ---------- CREATE COLLECTION (db-level) ----------
         if base_operation == "createCollection":
             if not params_str.strip():
