@@ -839,7 +839,19 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             colls = mongo_db.list_collection_names()
             return f"Collections: {colls}"
 
-        # ---------- CREATE COLLECTION (db-level) ----------
+        if base_operation == "getCollectionInfos" and collection_name is None:
+            colls = mongo_db.list_collections()
+            # Convert cursor to list of dicts
+            infos = list(colls)
+            # make ObjectId printable if present
+            for info in infos:
+                if 'info' in info and isinstance(info['info'], dict):
+                    for k, v in info['info'].items():
+                        if isinstance(v, ObjectId):
+                            info['info'][k] = str(v)
+            return f"Collection infos: {infos}"
+
+
         if base_operation == "createCollection":
             if not params_str.strip():
                 raise ValueError("createCollection requires a collection name parameter")
