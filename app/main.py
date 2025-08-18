@@ -829,6 +829,16 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         collection = mongo_db[collection_name] if collection_name else None
 
 
+        # ---------- DB-LEVEL HELPERS ----------
+        if base_operation == "dropDatabase" and collection_name is None:
+            result = mongo_db.command("dropDatabase")
+            dropped = result.get('dropped', mongo_db.name)
+            return f"Database dropped: {dropped}"
+
+        if base_operation == "getCollectionNames" and collection_name is None:
+            colls = mongo_db.list_collection_names()
+            return f"Collections: {colls}"
+
         # ---------- CREATE COLLECTION (db-level) ----------
         if base_operation == "createCollection":
             if not params_str.strip():
