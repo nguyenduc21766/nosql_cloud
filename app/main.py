@@ -985,6 +985,33 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     except Exception as e:
         raise ValueError(f"MongoDB execution error: {str(e)}")
 
+        
+        # ---------- DB UTILITIES ----------
+        
+        elif base_operation == "show dbs":
+            dbs = mongo_client.list_database_names()
+            return f"Databases: {dbs}"
+        
+        elif base_operation == "db":
+            return f"Current database: {mongo_db.name}"
+        
+        elif base_operation.startswith("use "):
+            new_db_name = base_operation.split(" ", 1)[1].strip()
+            if not new_db_name:
+                raise ValueError("use requires a database name")
+            global mongo_db
+            mongo_db = mongo_client[new_db_name]
+            return f"Switched to database: {mongo_db.name}"
+        
+        elif base_operation == "db.dropDatabase":
+            result = mongo_db.command("dropDatabase")
+            return f"Dropped database: {result}"
+        
+        elif base_operation in ("db.getCollectionNames", "show collections"):
+            collections = mongo_db.list_collection_names()
+            return f"Collections: {collections}"
+
+
 
 
 def reset_mongodb():
