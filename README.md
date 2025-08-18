@@ -16,7 +16,7 @@ cd nosql_cloud
 
 ## Access services:
 
-* 🌐 FastAPI → [http://localhost:80](http://localhost:80)
+* 🌐 FastAPI → [http://localhost:2250](http://localhost:2250)
 * 🍃 MongoDB → mongodb://localhost:27017
 * 🧠 Redis → redis\://localhost:6379
 
@@ -76,7 +76,7 @@ export TOKEN=supersecretkey
 Example usage:
 
 ```bash
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"database":"redis","commands":"PING"}'
@@ -106,7 +106,7 @@ chmod +x run
 
 This starts:
 
-* 🌐 FastAPI at `http://localhost:80/`
+* 🌐 FastAPI at `http://localhost:2250/`
 * 🍃 MongoDB at `localhost:27017`
 * 🧠 Redis at `localhost:6379`
 
@@ -117,7 +117,7 @@ This starts:
 ### MongoDB Query
 
 ```bash
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
@@ -135,7 +135,7 @@ Response:
 ### Redis Query
 
 ```bash
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
@@ -151,7 +151,7 @@ db.users.insertOne({"name":"Alice"})
 db.users.find({})
 EOF
 
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"database":"mongodb","commands":"'"$(cat mongo_cmds.txt)"'"}'
@@ -186,7 +186,7 @@ Inside container:
 
 ```
         +-------------+
-        |   FastAPI   |  <-- REST API (port 80)
+        |   FastAPI   |  <-- REST API (port 2250)
         +------+------+ 
                |
    +-----------+-----------+
@@ -218,7 +218,7 @@ sudo systemctl stop redis-server
 
 ### Firewall
 
-Make sure ports **80, 27017, 6379** are open (Azure NSG / firewall).
+Make sure ports **2250, 27017, 6379** are open (Azure NSG / firewall).
 
 ### Common errors
 
