@@ -33,7 +33,7 @@ Starts container and services:
 
 Services available:
 
-* FastAPI:  [http://localhost:80/](http://localhost:80/)
+* FastAPI:  [http://localhost:2250/](http://localhost:2250/)
 * MongoDB:  localhost:27017
 * Redis:    localhost:6379
 
@@ -60,7 +60,7 @@ Inside you can run:
 ### MongoDB Example
 
 ```bash
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer supersecretkey" \
   -H "Content-Type: application/json" \
   -d '{"database":"mongodb","commands":"db.users.insertOne({\"name\":\"Ann\"})\ndb.users.find({})"}'
@@ -69,7 +69,7 @@ curl -X POST http://localhost:80/api/v1/submit \
 ### Redis Example
 
 ```bash
-curl -X POST http://localhost:80/api/v1/submit \
+curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer supersecretkey" \
   -H "Content-Type: application/json" \
   -d '{"database":"redis","commands":"SET key1 \"hello\"\nGET key1"}'
@@ -150,7 +150,7 @@ ZINCRBY scores 50 "Alice"
   systemctl status fastapi.service
   ```
 
-* **Firewall** → open ports 80, 27017, 6379 (e.g., Azure NSG)  
+* **Firewall** → open ports 2250, 27017, 6379 (e.g., Azure NSG)  
 * **Invalid JSON errors** → always use **double quotes** (`"`) inside MongoDB documents.
 
 ---
