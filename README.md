@@ -11,6 +11,7 @@ This project provides a containerized development environment for interacting wi
 git clone <your-repo-url>
 cd nosql_cloud
 ./build && ./run
+
 ---
 
 Access services:
