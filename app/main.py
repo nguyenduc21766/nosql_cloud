@@ -217,6 +217,25 @@ def parse_mongodb_command(line: str) -> tuple:
     if not line:
         raise ValueError("Empty command")
 
+
+        # ---- SPECIAL SHELL KEYWORDS (no 'db.' prefix) ----
+    low = line.lower()
+    if low == "show dbs":
+        # db-level op, no params, no chaining
+        return None, "show_dbs", "", []
+    if low in ("show collections", "show tables"):
+        return None, "show_collections", "", []
+    if low == "db":
+        return None, "current_db", "", []
+
+    # use <dbname>
+    if low.startswith("use "):
+        # capture the rest verbatim to allow hyphens/underscores/etc.
+        dbname = line.split(None, 1)[1].strip()
+        if not dbname:
+            raise ValueError("use requires a database name")
+        return None, "use_db", dbname, []
+
     if not line.startswith("db."):
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -827,6 +846,40 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     try:
         # For db-level ops, collection_name can be None
         collection = mongo_db[collection_name] if collection_name else None
+
+
+
+                # ---------- SPECIAL SHELL KEYWORDS ----------
+        if base_operation == "show_dbs":
+            dbs = mongo_client.list_database_names()
+            return f"Databases: {dbs}"
+
+        if base_operation == "show_collections":
+            colls = mongo_db.list_collection_names()
+            return f"Collections: {colls}"
+
+        if base_operation == "current_db":
+            return f"Current database: {mongo_db.name}"
+
+        if base_operation == "use_db":
+            new_name = params_str.strip()
+            if not new_name:
+                raise ValueError("use requires a database name")
+            # rebind the global mongo_db
+            global mongo_db  # ensure you're updating the module-level global
+            mongo_db = mongo_client[new_name]
+            return f"Switched to database: {mongo_db.name}"
+
+        # ---------- DB-LEVEL HELPERS ----------
+        if base_operation == "dropDatabase" and collection_name is None:
+            result = mongo_db.command("dropDatabase")
+            # result typically looks like {'dropped': '<name>', 'ok': 1.0}
+            dropped = result.get('dropped', mongo_db.name)
+            return f"Database dropped: {dropped}"
+
+        if base_operation == "getCollectionNames" and collection_name is None:
+            colls = mongo_db.list_collection_names()
+            return f"Collections: {colls}"
 
         # ---------- CREATE COLLECTION (db-level) ----------
         if base_operation == "createCollection":
