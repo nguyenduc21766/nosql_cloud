@@ -3,12 +3,11 @@
 
 This project provides a containerized development environment for interacting with **MongoDB** and **Redis** through a unified **REST API** powered by **FastAPI**.
 
-It is designed for **learning and development purposes** — not for production.
 
 ---
 
 ## ⚡ Quickstart
-
+---
 
 git clone <your-repo-url>
 cd nosql_cloud
