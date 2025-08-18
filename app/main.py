@@ -218,7 +218,7 @@ def parse_mongodb_command(line: str) -> tuple:
         raise ValueError("Empty command")
 
 
-        # ---- SPECIAL SHELL KEYWORDS (no 'db.' prefix) ----
+    # ---- SPECIAL SHELL KEYWORDS (no 'db.' prefix) ----
     low = line.lower()
     if low == "show dbs":
         # db-level op, no params, no chaining
