@@ -4,7 +4,7 @@ from config import EXPECTED_TOKEN
 from .schemas import Submission
 from .db import init_databases, check_database_connections, reset_mongodb, redis_client
 from .mongo import parse_mongodb_command, execute_mongodb_command
-from .redis_commands import parse_redis_command, execute_redis_command
+from .redis import parse_redis_command, execute_redis_command
 from .utils import split_mongo_commands
 
 logging.basicConfig(level=logging.INFO)
