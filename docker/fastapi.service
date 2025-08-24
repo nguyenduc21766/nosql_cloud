@@ -1,10 +1,11 @@
 [Unit]
 Description=FastAPI CodeRunner NoSQL backend
-After=network.target redis-server.service mongod.service
+After=network.target redis.service mongod.service
 
 [Service]
 User=root
-WorkingDirectory=/
+WorkingDirectory=/app
+Environment=PYTHONPATH=/app
 ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80 
 Restart=always
 RestartSec=2
