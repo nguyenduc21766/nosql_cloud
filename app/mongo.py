@@ -139,7 +139,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             if not params_str.strip():
                 raise ValueError("adminCommand requires a parameter object")
             cmd = json.loads(mongo_shell_to_json(params_str))
-            result = mongo_client.admin.command(cmd)
+            result = db.mongo_client.admin.command(cmd)
             return f"Admin command result: {result}"
 
 
