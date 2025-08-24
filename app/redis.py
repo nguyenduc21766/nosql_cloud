@@ -1,7 +1,7 @@
 import redis
 import time
 from typing import List
-from .db import redis_client
+from . import db  
 
 def parse_redis_command(line: str) -> tuple:
     """Parse a Redis command line into command and arguments."""
@@ -15,7 +15,9 @@ def parse_redis_command(line: str) -> tuple:
 
 def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
-
+    # safety: ensure client is initialized
+    if db.redis_client is None:
+        raise ValueError("Redis client is not initialized")
     # SET command
     if command == "SET":
         if len(args) < 2:
@@ -28,14 +30,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
                 if seconds <= 0:
                     raise ValueError("EX seconds must be a positive integer")
                 value = " ".join(args[1:-2])  # Value is everything between key and EX
-                redis_client.set(key, value, ex=seconds)
+                db.redis_client.set(key, value, ex=seconds)
                 return f"Set key '{key}' with value '{value}' and expiration {seconds} seconds"
             except ValueError:
                 raise ValueError("EX seconds argument must be a positive integer")
         else:
             # Standard SET without EX
             value = " ".join(args[1:])
-            redis_client.set(key, value)
+            db.redis_client.set(key, value)
             return f"Set key '{key}' with value '{value}'"
     
     # GET command
@@ -43,7 +45,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if len(args) != 1:
             raise ValueError("GET requires exactly one key argument")
         key = args[0]
-        value = redis_client.get(key)
+        value = db.redis_client.get(key)
         if value is None:
             return f"Key '{key}' not found"
         return f"Value for key '{key}': '{value}'"
@@ -57,7 +59,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         key_value_pairs = {args[i]: args[i + 1] for i in range(0, len(args), 2)}
         try:
             # Use mset to set all key-value pairs atomically
-            redis_client.mset(key_value_pairs)
+            db.redis_client.mset(key_value_pairs)
             # Return a confirmation message with all set pairs
             set_pairs = ", ".join([f"{k}: {v}" for k, v in key_value_pairs.items()])
             return f"Set multiple keys: {set_pairs}"
@@ -71,7 +73,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         
         try:
             # Retrieve values for all specified keys
-            values = redis_client.mget(args)
+            values = db.redis_client.mget(args)
             # Handle values as strings or None (no decoding needed)
             result = [v if v is not None else None for v in values]
             # Create a mapping of keys to values for the response
@@ -89,7 +91,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         
         try:
             # Get the number of keys in the current database
-            size = redis_client.dbsize()
+            size = db.redis_client.dbsize()
             return f"Number of keys in database: {size}"
         except redis.RedisError as e:
             raise ValueError(f"Failed to execute DBSIZE: {str(e)}")
@@ -127,13 +129,13 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             
             # Execute SCAN
             if match_pattern and count:
-                cursor, keys = redis_client.scan(cursor, match=match_pattern, count=count)
+                cursor, keys = db.redis_client.scan(cursor, match=match_pattern, count=count)
             elif match_pattern:
-                cursor, keys = redis_client.scan(cursor, match=match_pattern)
+                cursor, keys = db.redis_client.scan(cursor, match=match_pattern)
             elif count:
-                cursor, keys = redis_client.scan(cursor, count=count)
+                cursor, keys = db.redis_client.scan(cursor, count=count)
             else:
-                cursor, keys = redis_client.scan(cursor)
+                cursor, keys = db.redis_client.scan(cursor)
             
             # Keys are already strings due to decode_responses=True
             return f"SCAN cursor: {cursor}, keys: {keys}"
@@ -146,21 +148,21 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "DEL":
         if not args:
             raise ValueError("DEL requires at least one key argument")
-        deleted = redis_client.delete(*args)
+        deleted = db.redis_client.delete(*args)
         return f"Deleted {deleted} key(s)"
     
     # EXISTS command
     elif command == "EXISTS":
         if not args:
             raise ValueError("EXISTS requires at least one key argument")
-        count = redis_client.exists(*args)
+        count = db.redis_client.exists(*args)
         return f"{count} key(s) exist"
     
     # INCR command
     elif command == "INCR":
         if len(args) != 1:
             raise ValueError("INCR requires exactly one key argument")
-        value = redis_client.incr(args[0])
+        value = db.redis_client.incr(args[0])
         return f"Incremented key '{args[0]}' to {value}"
 
     # INCRBY command
@@ -171,14 +173,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             increment = int(args[1])
         except ValueError:
             raise ValueError("INCRBY increment argument must be an integer")
-        value = redis_client.incrby(args[0], increment)
+        value = db.redis_client.incrby(args[0], increment)
         return f"Incremented key '{args[0]}' by {increment} to {value}"
     
     # DECR command
     elif command == "DECR":
         if len(args) != 1:
             raise ValueError("DECR requires exactly one key argument")
-        value = redis_client.decr(args[0])
+        value = db.redis_client.decr(args[0])
         return f"Decremented key '{args[0]}' to {value}"
 
     # DECRBY command
@@ -189,7 +191,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             decrement = int(args[1])
         except ValueError:
             raise ValueError("DECRBY decrement argument must be an integer")
-        value = redis_client.decrby(args[0], decrement)
+        value = db.redis_client.decrby(args[0], decrement)
         return f"Decremented key '{args[0]}' by {decrement} to {value}"
     
     # EXPIRE command
@@ -202,7 +204,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
                 raise ValueError("EXPIRE seconds must be a positive integer")
         except ValueError:
             raise ValueError("EXPIRE seconds argument must be a positive integer")
-        result = redis_client.expire(args[0], seconds)
+        result = db.redis_client.expire(args[0], seconds)
         return f"Set expiry on key '{args[0]}' to {seconds} seconds: {'Success' if result else 'Failed'}"
     
     
@@ -210,12 +212,12 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "KEYS":
         if len(args) != 1:
             raise ValueError("KEYS requires exactly one pattern argument")
-        keys = redis_client.keys(args[0])
+        keys = db.redis_client.keys(args[0])
         return f"Keys matching pattern '{args[0]}': {keys}"
     
     # FLUSHALL command
     elif command == "FLUSHALL":
-        redis_client.flushall()
+        db.redis_client.flushall()
         return "All keys have been flushed"
     #--------------------------------HASH COMMANDS--------------------------------
     # HSET command (Hash)
@@ -225,14 +227,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         key = args[0]
         field = args[1]
         value = " ".join(args[2:])
-        redis_client.hset(key, field, value)
+        db.redis_client.hset(key, field, value)
         return f"Set hash field '{field}' in key '{key}' to '{value}'"
     
     # HGET command (Hash)
     elif command == "HGET":
         if len(args) != 2:
             raise ValueError("HGET requires key and field arguments")
-        value = redis_client.hget(args[0], args[1])
+        value = db.redis_client.hget(args[0], args[1])
         if value is None:
             return f"Field '{args[1]}' in key '{args[0]}' not found"
         return f"Value for field '{args[1]}' in key '{args[0]}': '{value}'"
@@ -242,7 +244,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("HDEL requires at least key and one field argument")
         key = args[0]
         fields = args[1:]
-        deleted = redis_client.hdel(key, *fields)
+        deleted = db.redis_client.hdel(key, *fields)
         return f"Deleted {deleted} field(s) from hash at key '{key}'"
 
     #--------------------------------LIST COMMANDS--------------------------------
@@ -252,7 +254,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("LPUSH requires key and at least one value")
         key = args[0]
         values = args[1:]
-        count = redis_client.lpush(key, *values)
+        count = db.redis_client.lpush(key, *values)
         return f"Pushed {len(values)} value(s) to list '{key}', new length: {count}"
     
     # RPUSH command (List)
@@ -261,7 +263,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("RPUSH requires key and at least one value")
         key = args[0]
         values = args[1:]
-        count = redis_client.rpush(key, *values)
+        count = db.redis_client.rpush(key, *values)
         return f"Pushed {len(values)} value(s) to list '{key}', new length: {count}"
     
     # LRANGE command (List)
@@ -273,14 +275,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             stop = int(args[2])
         except ValueError:
             raise ValueError("LRANGE start and stop must be integers")
-        values = redis_client.lrange(args[0], start, stop)
+        values = db.redis_client.lrange(args[0], start, stop)
         return f"Values in list '{args[0]}' from {start} to {stop}: {values}"
 
     # LLEN command (List)
     elif command == "LLEN":
         if len(args) != 1:
             raise ValueError("LLEN requires exactly one key argument")
-        length = redis_client.llen(args[0])
+        length = db.redis_client.llen(args[0])
         return f"Length of list at key '{args[0]}': {length}"
 
     # LINSERT command (List)
@@ -293,7 +295,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("LINSERT where argument must be AFTER or BEFORE")
         pivot = args[2]
         value = args[3]
-        count = redis_client.linsert(key, where, pivot, value)
+        count = db.redis_client.linsert(key, where, pivot, value)
         if count == -1:
             return f"No pivot '{pivot}' found in list at key '{key}'"
         return f"Inserted value '{value}' {where.lower()} '{pivot}' in list at key '{key}', new length: {count}"
@@ -306,7 +308,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             index = int(args[1])
         except ValueError:
             raise ValueError("LINDEX index must be an integer")
-        value = redis_client.lindex(args[0], index)
+        value = db.redis_client.lindex(args[0], index)
         if value is None:
             return f"No value found at index {index} in list at key '{args[0]}'"
         return f"Value at index {index} in list at key '{args[0]}': '{value}'"
@@ -314,7 +316,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "RPOP":
         if len(args) != 1:
             raise ValueError("RPOP requires exactly one key argument")
-        value = redis_client.rpop(args[0])
+        value = db.redis_client.rpop(args[0])
         if value is None:
             return f"No value popped from list at key '{args[0]}' (list is empty)"
         return f"Popped value '{value}' from right of list at key '{args[0]}'"
@@ -322,7 +324,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "LPOP":
         if len(args) != 1:
             raise ValueError("LPOP requires exactly one key argument")
-        value = redis_client.lpop(args[0])
+        value = db.redis_client.lpop(args[0])
         if value is None:
             return f"No value popped from list at key '{args[0]}' (list is empty)"
         return f"Popped value '{value}' from left of list at key '{args[0]}'"
@@ -335,7 +337,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             stop = int(args[2])
         except ValueError:
             raise ValueError("LTRIM start and stop must be integers")
-        redis_client.ltrim(args[0], start, stop)
+        db.redis_client.ltrim(args[0], start, stop)
         return f"Trimmed list at key '{args[0]}' to range {start} to {stop}"
     #--------------------------------SET COMMANDS--------------------------------
     # SADD command (Set)
@@ -344,20 +346,20 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("SADD requires key and at least one member")
         key = args[0]
         members = args[1:]
-        count = redis_client.sadd(key, *members)
+        count = db.redis_client.sadd(key, *members)
         return f"Added {count} new member(s) to set '{key}': {', '.join(members)}"
     
     # SMEMBERS command (Set)
     elif command == "SMEMBERS":
         if len(args) != 1:
             raise ValueError("SMEMBERS requires exactly one key argument")
-        members = redis_client.smembers(args[0])
+        members = db.redis_client.smembers(args[0])
         return f"Members of set '{args[0]}': {list(members)}"
     # SCARD
     elif command == "SCARD":
         if len(args) != 1:
             raise ValueError("SCARD requires exactly one key argument")
-        cardinality = redis_client.scard(args[0])
+        cardinality = db.redis_client.scard(args[0])
         return f"Cardinality of set at key '{args[0]}': {cardinality}"    
     # SISMEMBER command
     elif command == "SISMEMBER":
@@ -365,7 +367,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("SISMEMBER requires key and member arguments")
         key = args[0]
         member = args[1]
-        exists = redis_client.sismember(key, member)
+        exists = db.redis_client.sismember(key, member)
         return f"Member '{member}' {'is' if exists else 'is not'} in set at key '{key}'"
     # SREM command
     elif command == "SREM":
@@ -373,7 +375,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("SREM requires at least key and one member argument")
         key = args[0]
         members = args[1:]
-        removed = redis_client.srem(key, *members)
+        removed = db.redis_client.srem(key, *members)
         return f"Removed {removed} member(s) from set at key '{key}'"
     #--------------------------------------SortedSet----------------------------------------------
     elif command == "ZADD":
@@ -388,7 +390,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         # Prepare dictionary of score-member pairs
         score_member_dict = {member: score for score, member in zip(scores, members)}
         # Add only new members with nx=True
-        added = redis_client.zadd(key, score_member_dict, nx=True)
+        added = db.redis_client.zadd(key, score_member_dict, nx=True)
         # List the members that were added (based on input, assuming nx=True ensures only new ones)
         added_members = [member for member in members[:added]] if added > 0 else []
         return f"Added {added} member(s) to sorted set at key '{key}': {added_members}"
@@ -398,7 +400,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("ZSCORE requires key and member arguments")
         key = args[0]
         member = args[1]
-        score = redis_client.zscore(key, member)
+        score = db.redis_client.zscore(key, member)
         if score is None:
             return f"No score found for member '{member}' in sorted set at key '{key}'"
         return f"Score for member '{member}' in sorted set at key '{key}': {score}"
@@ -412,7 +414,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("ZINCRBY increment must be a number")
         key = args[0]
         member = args[2]
-        new_score = redis_client.zincrby(key, increment, member)
+        new_score = db.redis_client.zincrby(key, increment, member)
         return f"Increased score for member '{member}' by {increment} in sorted set at key '{key}' to {new_score}"
 
     elif command == "ZREM":
@@ -420,7 +422,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("ZREM requires at least key and one member argument")
         key = args[0]
         members = args[1:]
-        removed = redis_client.zrem(key, *members)
+        removed = db.redis_client.zrem(key, *members)
         return f"Removed {removed} member(s) from sorted set at key '{key}'"
 
     elif command == "ZRANGE":
@@ -434,10 +436,10 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         key = args[0]
         with_scores = len(args) > 3 and args[3].upper() == "WITHSCORES"
         if with_scores:
-            results = redis_client.zrange(key, start, stop, withscores=True)
+            results = db.redis_client.zrange(key, start, stop, withscores=True)
             return f"Values in sorted set '{key}' from {start} to {stop} with scores: {[(m.decode() if isinstance(m, bytes) else m, s) for m, s in results]}"
         else:
-            results = redis_client.zrange(key, start, stop)
+            results = db.redis_client.zrange(key, start, stop)
             return f"Values in sorted set '{key}' from {start} to {stop}: {[m.decode() if isinstance(m, bytes) else m for m in results]}"
 
     #------------------------------------PUBSUB--------------------------------
@@ -446,7 +448,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             raise ValueError("PUBLISH requires channel and message arguments")
         channel = args[0]
         message = args[1]
-        count = redis_client.publish(channel, message)
+        count = db.redis_client.publish(channel, message)
         return f"Published message '{message}' to channel '{channel}', reached {count} subscriber(s)"
 
 
@@ -459,14 +461,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
             timeout = int(args[1])
         except ValueError:
             raise ValueError("WAIT numreplicas and timeout must be integers")
-        num_replicas_acked = redis_client.wait(numreplicas, timeout)
+        num_replicas_acked = db.redis_client.wait(numreplicas, timeout)
         return f"WAIT: {num_replicas_acked} replicas acknowledged within {timeout}ms"
     
     # TTL command
     elif command == "TTL":
         if len(args) != 1:
             raise ValueError("TTL requires exactly one key argument")
-        ttl = redis_client.ttl(args[0])
+        ttl = db.redis_client.ttl(args[0])
         if ttl == -2:
             return f"Key '{args[0]}' does not exist"
         elif ttl == -1:
@@ -491,7 +493,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
         if len(args) != 2:
             raise ValueError("RENAME requires old key and new key arguments")
         try:
-            redis_client.rename(args[0], args[1])
+            db.redis_client.rename(args[0], args[1])
             return f"Renamed key '{args[0]}' to '{args[1]}'"
         except redis.RedisError as e:
             raise ValueError(f"Failed to rename key '{args[0]}' to '{args[1]}': {str(e)}")
@@ -500,7 +502,7 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "OBJECT":
         if len(args) < 2 or args[0].upper() != "ENCODING":
             raise ValueError("OBJECT ENCODING requires key argument")
-        encoding = redis_client.object("encoding", args[1])
+        encoding = db.redis_client.object("encoding", args[1])
         if encoding is None:
             return f"No encoding found for key '{args[1]}'"
         return f"Encoding for key '{args[1]}': {encoding}"
@@ -509,14 +511,14 @@ def execute_redis_command(command: str, args: List[str]) -> str:
     elif command == "TYPE":
         if len(args) != 1:
             raise ValueError("TYPE requires exactly one key argument")
-        key_type = redis_client.type(args[0])
+        key_type = db.redis_client.type(args[0])
         return f"Type of key '{args[0]}': {key_type}"
     
     # STRLEN command
     elif command == "STRLEN":
         if len(args) != 1:
             raise ValueError("STRLEN requires exactly one key argument")
-        length = redis_client.strlen(args[0])
+        length = db.redis_client.strlen(args[0])
         return f"Length of string at key '{args[0]}': {length}"
 
     else:
