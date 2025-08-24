@@ -1,3 +1,4 @@
+import redis
 import time
 from typing import List
 from .db import redis_client
