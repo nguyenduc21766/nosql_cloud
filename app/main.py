@@ -1,6 +1,6 @@
 import logging, threading
 from fastapi import FastAPI, HTTPException, Header
-from config import EXPECTED_TOKEN
+from .config import EXPECTED_TOKEN
 from .schemas import Submission
 from .db import init_databases, check_database_connections, reset_mongodb, redis_client
 from .mongo import parse_mongodb_command, execute_mongodb_command
@@ -43,7 +43,7 @@ async def health_check():
 
 @app.post("/api/v1/submit")
 def submit(submission: Submission, authorization: str = Header(None)):
-    if authorization != f"Bearer {API_TOKEN}":
+    if authorization != f"Bearer {EXPECTED_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     check_database_connections()
