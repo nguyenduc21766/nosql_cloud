@@ -1,7 +1,7 @@
 import json
 import logging
 from bson import ObjectId
-from .db import mongo_db, mongo_client
+from . import db
 from .utils import (
     mongo_shell_to_json, split_top_level_json_args, parse_two_params,
     split_mongo_commands, find_matching_paren
@@ -89,21 +89,21 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     """Execute a MongoDB command and return the result as a string, supporting shell-style JSON, multi-arg ops, and basic chaining."""
     try:
         # For db-level ops, collection_name can be None
-        collection = mongo_db[collection_name] if collection_name else None
+        collection = db.mongo_db[collection_name] if collection_name else None
 
 
         # ---------- DB-LEVEL HELPERS ----------
         if base_operation == "dropDatabase" and collection_name is None:
-            result = mongo_db.command("dropDatabase")
-            dropped = result.get('dropped', mongo_db.name)
+            result = db.mongo_db.command("dropDatabase")
+            dropped = result.get('dropped', db.mongo_db.name)
             return f"Database dropped: {dropped}"
 
         if base_operation == "getCollectionNames" and collection_name is None:
-            colls = mongo_db.list_collection_names()
+            colls = db.mongo_db.list_collection_names()
             return f"Collections: {colls}"
 
         if base_operation == "getCollectionInfos" and collection_name is None:
-            colls = mongo_db.list_collections()
+            colls = db.mongo_db.list_collections()
             # Convert cursor to list of dicts
             infos = list(colls)
             # make ObjectId printable if present
@@ -132,7 +132,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             if len(parts) > 1:
                 options = json.loads(mongo_shell_to_json(parts[1].strip()))
 
-            mongo_db.create_collection(name, **options)
+            db.mongo_db.create_collection(name, **options)
             return f"Collection '{name}' created"
 
         if base_operation == "adminCommand" and collection_name is None:
