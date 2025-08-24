@@ -1,2 +1,5 @@
 __pycache__/
 venv/
+# Local runtime config (not tracked)
+app/settings.json
+app/.token
