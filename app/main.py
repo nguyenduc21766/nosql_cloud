@@ -8,6 +8,8 @@ from typing import Optional, List, Any, Dict, Union
 from bson import ObjectId
 import logging
 import time
+from config import EXPECTED_TOKEN
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -146,7 +148,7 @@ except Exception as e:
 execution_lock = threading.Lock()
 
 # Token for authorization
-EXPECTED_TOKEN = "supersecretkey"
+#EXPECTED_TOKEN = "supersecretkey"
 
 # Submission model
 class Submission(BaseModel):
