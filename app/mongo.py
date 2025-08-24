@@ -1,7 +1,7 @@
 import json
 import logging
 from bson import ObjectId
-from .db import mongo_db
+from .db import mongo_db, mongo_client
 from .utils import (
     mongo_shell_to_json, split_top_level_json_args, parse_two_params,
     split_mongo_commands, find_matching_paren
