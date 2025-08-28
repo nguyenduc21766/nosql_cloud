@@ -843,7 +843,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             new_name = params_str.strip()
             if not new_name:
                 raise ValueError("use requires a database name")
-            db.mongo_db = db.mongo_client[new_name]  # switch database
+            mongo_db = mongo_client[new_name]  # switch database
             return f"Switched to database: {db.mongo_db.name}"
 
         # ---------- DB-LEVEL HELPERS ----------
