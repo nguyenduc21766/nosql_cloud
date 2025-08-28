@@ -219,6 +219,14 @@ def parse_mongodb_command(line: str) -> tuple:
     if not line:
         raise ValueError("Empty command")
 
+    # ---- SPECIAL SHELL KEYWORDS (no 'db.' prefix) ----
+    low = line.lower()
+    if low.startswith("use "):
+        dbname = line.split(None, 1)[1].strip()
+        if not dbname:
+            raise ValueError("use requires a database name")
+        return None, "use_db", dbname, []
+
     if not line.startswith("db."):
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -830,6 +838,13 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
         # For db-level ops, collection_name can be None
         collection = mongo_db[collection_name] if collection_name else None
 
+        # ---- Handle "use <dbname>" ----
+        if base_operation == "use_db":
+            new_name = params_str.strip()
+            if not new_name:
+                raise ValueError("use requires a database name")
+            db.mongo_db = db.mongo_client[new_name]  # switch database
+            return f"Switched to database: {db.mongo_db.name}"
 
         # ---------- DB-LEVEL HELPERS ----------
         if base_operation == "dropDatabase" and collection_name is None:
