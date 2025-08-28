@@ -844,7 +844,7 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             if not new_name:
                 raise ValueError("use requires a database name")
             mongo_db = mongo_client[new_name]  # switch database
-            return f"Switched to database: {db.mongo_db.name}"
+            return f"Switched to database: {mongo_db.name}"
 
         # ---------- DB-LEVEL HELPERS ----------
         if base_operation == "dropDatabase" and collection_name is None:
