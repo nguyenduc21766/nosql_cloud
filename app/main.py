@@ -840,10 +840,16 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
 
         # ---- Handle "use <dbname>" ----
         if base_operation == "use_db":
+            global mongo_db  # <-- IMPORTANT: update the module-level variable
             new_name = params_str.strip()
+            # strip quotes if present
+            if (new_name.startswith('"') and new_name.endswith('"')) or (new_name.startswith("'") and new_name.endswith("'")):
+                new_name = new_name[1:-1]
             if not new_name:
                 raise ValueError("use requires a database name")
-            mongo_db = mongo_client[new_name]  # switch database
+
+            # mongo_client is read-only here, so no 'global' needed for it
+            mongo_db = mongo_client[new_name]
             return f"Switched to database: {mongo_db.name}"
 
         # ---------- DB-LEVEL HELPERS ----------
