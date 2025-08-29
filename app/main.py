@@ -1107,66 +1107,58 @@ def split_mongo_commands(src: str):
 
     return cmds
 
+def run_commands(db_name: str, commands: str) -> list[str]:
+    """Execute all commands for the selected DB and return output lines."""
+    output_lines: list[str] = []
+
+    if db_name == "mongodb":
+        lines = split_mongo_commands(commands)
+    else:
+        # simple newline split for Redis
+        lines = [ln for ln in commands.strip().split("\n") if ln.strip()]
+
+    for line in lines:
+        if not line.strip():
+            continue
+
+        if db_name == "redis":
+            cmd, args = parse_redis_command(line)
+            output_lines.append(execute_redis_command(cmd, args))
+        else:
+            collection, op, params, chain = parse_mongodb_command(line)
+            output_lines.append(execute_mongodb_command(collection, op, params, chain))
+
+    return output_lines
+
 
 @app.post("/api/v1/submit")
 def submit(submission: Submission, authorization: str = Header(None)):
+    # Auth
     if authorization != f"Bearer {EXPECTED_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    # Quick health check
     check_database_connections()
 
-    database = submission.database.lower()
-    if database not in ["redis", "mongodb"]:
+    db_name = submission.database.lower()
+    if db_name not in ("redis", "mongodb"):
         raise HTTPException(status_code=400, detail="Supported databases: redis, mongodb")
 
     with execution_lock:
-        # 1) PRE-RESET: always start clean
         try:
-            if database == "redis":
-                db.redis_client.flushall()
-            else:
-                reset_mongodb()
-        except Exception as pre_e:
-            # if even pre-reset fails, surface it
-            raise HTTPException(status_code=500, detail=f"Pre-reset failed: {pre_e}")
-
-        error: Exception | None = None
-        output_lines: list[str] = []
-
-        try:
-            # --- execute commands ---
-            if database == "mongodb":
-                lines = split_mongo_commands(submission.commands)
-            else:
-                lines = [ln for ln in submission.commands.strip().split("\n") if ln.strip()]
-
-            for line in lines:
-                if not line.strip():
-                    continue
-                if database == "redis":
-                    command, args = parse_redis_command(line)
-                    result = execute_redis_command(command, args)
-                else:
-                    collection, op, params, chain = parse_mongodb_command(line)
-                    result = execute_mongodb_command(collection, op, params, chain)
-                output_lines.append(result)
-
+            output_lines = run_commands(db_name, submission.commands)
+            return {"success": True, "output": "\n".join(output_lines)}
         except Exception as e:
-            error = e  # remember the error, but don't return yet
+            # preserve your existing error surfacing
+            logger.error(f"Error processing submission: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
         finally:
-            # 2) POST-RESET: always clean up, even on error
+            # 🔒 Always reset, even if there was an error
             try:
-                if database == "redis":
+                if db_name == "redis":
                     db.redis_client.flushall()
                 else:
                     reset_mongodb()
-            except Exception as post_e:
-                # log but don't mask the original error
-                logger.error(f"Post-reset failed: {post_e}")
-
-        if error:
-            # now surface the original error after cleanup
-            logger.error(f"Error processing submission: {error}")
-            raise HTTPException(status_code=500, detail=str(error))
-
-        return {"success": True, "output": "\n".join(output_lines)}
+            except Exception as reset_err:
+                # Log reset issues but don't mask the original exception
+                logger.error(f"Failed to reset {db_name}: {reset_err}")
