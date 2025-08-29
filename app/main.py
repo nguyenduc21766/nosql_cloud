@@ -835,12 +835,14 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     """Execute a MongoDB command and return the result as a string, supporting shell-style JSON, multi-arg ops, and basic chaining."""
     try:
         # For db-level ops, collection_name can be None
-        collection = mongo_db[collection_name] if collection_name else None
+        #collection = mongo_db[collection_name] if collection_name else None
 
+        # Use the global mongo_db as default, override with use command
+        db = mongo_client.get_database(params_str) if base_operation == "use" else mongo_db
+        # For db-level ops, collection_name can be None
+        collection = db[collection_name] if collection_name else None
         # ---------- USE COMMAND ----------
         if base_operation == "use" and collection_name is None:
-            # Switch the database context
-            mongo_db = mongo_client.get_database(params_str)
             return f"Switched to database: {params_str}"
 
 
