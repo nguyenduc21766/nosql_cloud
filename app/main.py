@@ -219,6 +219,13 @@ def parse_mongodb_command(line: str) -> tuple:
     if not line:
         raise ValueError("Empty command")
 
+    # Case: 'use' command (e.g., use myDatabase)
+    if line.startswith("use "):
+        db_name = line[4:].strip()
+        if not db_name:
+            raise ValueError("Database name required for 'use' command")
+        return None, "use", db_name, []
+
     if not line.startswith("db."):
         raise ValueError("MongoDB commands must start with 'db.'")
 
@@ -829,6 +836,12 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     try:
         # For db-level ops, collection_name can be None
         collection = mongo_db[collection_name] if collection_name else None
+
+        # ---------- USE COMMAND ----------
+        if base_operation == "use" and collection_name is None:
+            # Switch the database context
+            mongo_db = mongo_client.get_database(params_str)
+            return f"Switched to database: {params_str}"
 
 
         # ---------- DB-LEVEL HELPERS ----------
