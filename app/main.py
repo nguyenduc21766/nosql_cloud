@@ -1109,12 +1109,10 @@ def split_mongo_commands(src: str):
 
 
 @app.post("/api/v1/submit")
-def submit(submission: Submission, authorization: Optional[str] = Header(None)):
-    # Check auth token
+def submit(submission: Submission, authorization: str = Header(None)):
     if authorization != f"Bearer {EXPECTED_TOKEN}":
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Quick connection check with timeout protection
     check_database_connections()
 
     database = submission.database.lower()
@@ -1122,44 +1120,53 @@ def submit(submission: Submission, authorization: Optional[str] = Header(None)):
         raise HTTPException(status_code=400, detail="Supported databases: redis, mongodb")
 
     with execution_lock:
+        # 1) PRE-RESET: always start clean
         try:
-            output_lines = []
-            #lines = submission.commands.strip().split("\n")
+            if database == "redis":
+                db.redis_client.flushall()
+            else:
+                reset_mongodb()
+        except Exception as pre_e:
+            # if even pre-reset fails, surface it
+            raise HTTPException(status_code=500, detail=f"Pre-reset failed: {pre_e}")
+
+        error: Exception | None = None
+        output_lines: list[str] = []
+
+        try:
+            # --- execute commands ---
             if database == "mongodb":
                 lines = split_mongo_commands(submission.commands)
             else:
                 lines = [ln for ln in submission.commands.strip().split("\n") if ln.strip()]
 
-            
             for line in lines:
                 if not line.strip():
                     continue
-                
                 if database == "redis":
                     command, args = parse_redis_command(line)
                     result = execute_redis_command(command, args)
-                    output_lines.append(result)
-                
-                elif database == "mongodb":
-                    collection, base_operation, params_str, chained_methods = parse_mongodb_command(line)
-                    logging.info(f"Parsed command: {line}, Result: (collection={collection}, base_operation={base_operation}, params_str={params_str}, chained_methods={chained_methods})")
-                    result = execute_mongodb_command(collection, base_operation, params_str, chained_methods)
-                    output_lines.append(result)
-
-            # Reset database after processing
-            if database == "redis":
-                redis_client.flushall()
-            elif database == "mongodb":
-                reset_mongodb()
-            
-            '''Reset the database after each student submission
-            Ensure the next student gets a clean database state'''
-
-            return {
-                "success": True,
-                "output": "\n".join(output_lines)
-            }
+                else:
+                    collection, op, params, chain = parse_mongodb_command(line)
+                    result = execute_mongodb_command(collection, op, params, chain)
+                output_lines.append(result)
 
         except Exception as e:
-            logger.error(f"Error processing submission: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            error = e  # remember the error, but don't return yet
+        finally:
+            # 2) POST-RESET: always clean up, even on error
+            try:
+                if database == "redis":
+                    db.redis_client.flushall()
+                else:
+                    reset_mongodb()
+            except Exception as post_e:
+                # log but don't mask the original error
+                logger.error(f"Post-reset failed: {post_e}")
+
+        if error:
+            # now surface the original error after cleanup
+            logger.error(f"Error processing submission: {error}")
+            raise HTTPException(status_code=500, detail=str(error))
+
+        return {"success": True, "output": "\n".join(output_lines)}
