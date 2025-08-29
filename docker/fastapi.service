@@ -6,7 +6,7 @@ After=network.target redis.service mongod.service
 User=root
 WorkingDirectory=/app
 Environment=PYTHONPATH=/app
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 80 
+ExecStart=/usr/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 80 --reload --log-level debug
 Restart=always
 RestartSec=2
 
