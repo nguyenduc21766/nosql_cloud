@@ -1123,7 +1123,7 @@ def submit(submission: Submission, authorization: str = Header(None)):
         # 1) PRE-RESET: always start clean
         try:
             if database == "redis":
-                db.redis_client.flushall()
+                redis_client.flushall()
             else:
                 reset_mongodb()
         except Exception as pre_e:
