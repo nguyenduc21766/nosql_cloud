@@ -55,13 +55,13 @@ The API requires a **Bearer token** for all requests.
 Default token:
 
 ```python
-TOKEN = "supersecretkey"
+TOKEN = "7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2"
 ```
 
 Set it as an environment variable:
 
 ```bash
-export TOKEN=supersecretkey
+export TOKEN=7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2
 ```
 
 Example usage:
