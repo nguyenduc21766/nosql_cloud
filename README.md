@@ -60,10 +60,6 @@ Default token is configured in `/app/settings.json`:
 }
 ```
 
-```python
-TOKEN = "7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2"
-```
-
 Set it as an environment variable:
 
 ```bash
@@ -73,6 +69,7 @@ export TOKEN=7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2
 Example usage:
 
 ```bash
+export TOKEN=7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2
 curl -X POST http://localhost:2250/api/v1/submit \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
