@@ -58,8 +58,7 @@ Default token is configured in `/app/settings.json`:
 {
   "token": "7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2"
 }
-
-Default token:
+```
 
 ```python
 TOKEN = "7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2"
