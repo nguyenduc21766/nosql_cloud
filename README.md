@@ -52,6 +52,13 @@ For examples, see [`./help.txt`](./help.txt).
 
 The API requires a **Bearer token** for all requests.
 
+Default token is configured in `/app/settings.json`:
+
+```json
+{
+  "token": "7tVvCQBl0z9jh68QzYX7*KQRBlOiAXNgXn%2"
+}
+
 Default token:
 
 ```python
@@ -73,7 +80,7 @@ curl -X POST http://localhost:2250/api/v1/submit \
   -d '{"database":"redis","commands":"PING"}'
 ```
 
-You can change the token in `/app/main.py`.
+
 
 ---
 
