@@ -1,4 +1,4 @@
-from . import database.database.redis_client
+from . import database
 from typing import List
 
 
