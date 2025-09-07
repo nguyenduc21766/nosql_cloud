@@ -1,7 +1,7 @@
 import redis
 import pymongo
 from fastapi import HTTPException
-from logging_config import logger
+from .logging_config import logger
 
 redis_client = None
 mongo_client = None
