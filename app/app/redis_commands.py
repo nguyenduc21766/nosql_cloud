@@ -1,4 +1,6 @@
 from .database import redis_client
+from typing import List
+
 
 def execute_redis_command(command: str, args: List[str]) -> str:
     """Execute a Redis command and return the result as a string."""
