@@ -1,6 +1,6 @@
 from bson import ObjectId
 import json
-from .database import mongo_client, mongo_db
+from . import database  
 from .parsers import mongo_shell_to_json, split_top_level_json_args, parse_two_params
 
 
@@ -10,10 +10,10 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
     """Execute a MongoDB command and return the result as a string, supporting shell-style JSON, multi-arg ops, and basic chaining."""
     try:
         # For db-level ops, collection_name can be None
-        #collection = mongo_db[collection_name] if collection_name else None
+        #collection = database.mongo_db[collection_name] if collection_name else None
 
-        # Use the global mongo_db as default, override with use command
-        db = mongo_client.get_database(params_str) if base_operation == "use" else mongo_db
+        # Use the global database.mongo_db as default, override with use command
+        db = database.mongo_client.get_database(params_str) if base_operation == "use" else database.mongo_db
         # For db-level ops, collection_name can be None
         collection = db[collection_name] if collection_name else None
         # ---------- USE COMMAND ----------
@@ -23,16 +23,16 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
 
         # ---------- DB-LEVEL HELPERS ----------
         if base_operation == "dropDatabase" and collection_name is None:
-            result = mongo_db.command("dropDatabase")
-            dropped = result.get('dropped', mongo_db.name)
+            result = database.mongo_db.command("dropDatabase")
+            dropped = result.get('dropped', database.mongo_db.name)
             return f"Database dropped: {dropped}"
 
         if base_operation == "getCollectionNames" and collection_name is None:
-            colls = mongo_db.list_collection_names()
+            colls = database.mongo_db.list_collection_names()
             return f"Collections: {colls}"
 
         if base_operation == "getCollectionInfos" and collection_name is None:
-            colls = mongo_db.list_collections()
+            colls = database.mongo_db.list_collections()
             # Convert cursor to list of dicts
             infos = list(colls)
             # make ObjectId printable if present
@@ -61,14 +61,14 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
             if len(parts) > 1:
                 options = json.loads(mongo_shell_to_json(parts[1].strip()))
 
-            mongo_db.create_collection(name, **options)
+            database.mongo_db.create_collection(name, **options)
             return f"Collection '{name}' created"
 
         if base_operation == "adminCommand" and collection_name is None:
             if not params_str.strip():
                 raise ValueError("adminCommand requires a parameter object")
             cmd = json.loads(mongo_shell_to_json(params_str))
-            result = mongo_client.admin.command(cmd)
+            result = database.mongo_client.admin.command(cmd)
             return f"Admin command result: {result}"
 
 
@@ -216,8 +216,8 @@ def execute_mongodb_command(collection_name: str, base_operation: str, params_st
 def reset_mongodb():
     """Reset MongoDB database by dropping all collections."""
     try:
-        for collection_name in mongo_db.list_collection_names():
-            mongo_db[collection_name].drop()
+        for collection_name in database.mongo_db.list_collection_names():
+            database.mongo_db[collection_name].drop()
         logger.info("MongoDB collections reset")
     except Exception as e:
         logger.error(f"Failed to reset MongoDB: {e}")
