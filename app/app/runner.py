@@ -1,7 +1,7 @@
 import threading
-from .parsers import parse_redis_command, parse_mongodb_command
-from .redis_commands import execute_redis_command
-from .mongo_commands import execute_mongodb_command, split_mongo_commands
+from parsers import parse_redis_command, parse_mongodb_command
+from redis_commands import execute_redis_command
+from mongo_commands import execute_mongodb_command, split_mongo_commands
 
 execution_lock = threading.Lock()
 
