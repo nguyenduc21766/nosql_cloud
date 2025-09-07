@@ -2,7 +2,8 @@ from fastapi import APIRouter, HTTPException, Header
 from config import EXPECTED_TOKEN
 from .models import Submission
 from .runner import run_commands, execution_lock
-from .database import redis_client, reset_mongodb, check_database_connections, mongo_client
+from .database import reset_mongodb, check_database_connections
+from . import database
 from .logging_config import logger
 
 router = APIRouter()
