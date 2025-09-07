@@ -1,7 +1,7 @@
 from bson import ObjectId
 import json
-from database import mongo_client, mongo_db
-from parsers import mongo_shell_to_json, split_top_level_json_args, parse_two_params
+from .database import mongo_client, mongo_db
+from .parsers import mongo_shell_to_json, split_top_level_json_args, parse_two_params
 
 
 
