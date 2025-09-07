@@ -20,10 +20,10 @@ async def root():
 async def health_check():
     health_status = {"redis": False, "mongodb": False}
     try:
-        redis_client.ping(); health_status["redis"] = True
+        database.redis_client.ping(); health_status["redis"] = True
     except Exception as e: logger.error(f"Redis health check failed: {e}")
     try:
-        mongo_client.admin.command("ping"); health_status["mongodb"] = True
+        database.mongo_client.admin.command("ping"); health_status["mongodb"] = True
     except Exception as e: logger.error(f"MongoDB health check failed: {e}")
     return {
         "status": "healthy" if all(health_status.values()) else "degraded",
@@ -48,7 +48,7 @@ def submit(submission: Submission, authorization: str = Header(None)):
             raise HTTPException(status_code=500, detail=str(e))
         finally:
             try:
-                if db_name == "redis": redis_client.flushall()
+                if db_name == "redis": database.redis_client.flushall()
                 else: reset_mongodb()
             except Exception as reset_err:
                 logger.error(f"Failed to reset {db_name}: {reset_err}")
